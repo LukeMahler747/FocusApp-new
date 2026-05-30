@@ -252,19 +252,19 @@
       var incomplete = all.filter(function (t) {
         return t.listDate === srcDate && !t.completed;
       });
-      if (!incomplete.length) {
-        alert('No incomplete items on this date to carry forward.');
-        return;
-      }
+      if (!incomplete.length) return;
       var todaySet = new Set(
         all.filter(function (t) { return t.listDate === tgt; })
            .map(function (t) { return t.panel + '|' + t.text.trim().toLowerCase(); })
       );
       var carried = 0;
-      var puts = [];
+      var ops = [];
       incomplete.forEach(function (t) {
         var key = t.panel + '|' + t.text.trim().toLowerCase();
-        if (todaySet.has(key)) return;
+        if (todaySet.has(key)) {
+          ops.push(DB.deleteTodo(t.id));
+          return;
+        }
         var copy = Object.assign({}, t, {
           id:        makeId(),
           listDate:  tgt,
@@ -273,14 +273,12 @@
           updatedAt: Date.now(),
           sortOrder: Date.now() + carried,
         });
-        puts.push(DB.putTodo(copy));
+        ops.push(DB.putTodo(copy));
+        ops.push(DB.deleteTodo(t.id));
         carried++;
       });
-      if (!carried) {
-        alert('All incomplete items already exist on today\'s list.');
-        return;
-      }
-      return Promise.all(puts).then(function () {
+      if (!ops.length) return;
+      return Promise.all(ops).then(function () {
         currentDate = tgt;
         updateDateUI();
         render();
@@ -497,7 +495,6 @@
 
     // Delete (soft)
     delBtn.addEventListener('click', function () {
-      if (!confirm('Move "' + todo.text + '" to trash?')) return;
       snapshotForUndo().then(function () {
         return Promise.all([DB.addToTrash(todo), DB.deleteTodo(todo.id)]);
       }).then(function () {
@@ -736,7 +733,10 @@
       var carried = 0;
       all.filter(function (t) { return selectedIds.has(t.id); }).forEach(function (t) {
         var key = t.panel + '|' + t.text.trim().toLowerCase();
-        if (todaySet.has(key)) return;
+        if (todaySet.has(key)) {
+          ops.push(DB.deleteTodo(t.id));
+          return;
+        }
         var now = Date.now();
         var copy = Object.assign({}, t, {
           id:        makeId(),
@@ -747,9 +747,10 @@
           sortOrder: now + carried,
         });
         ops.push(DB.putTodo(copy));
+        ops.push(DB.deleteTodo(t.id));
         carried++;
       });
-      if (!carried) { alert('Selected items already exist on today\'s list.'); return; }
+      if (!ops.length) return;
       return Promise.all(ops).then(function () {
         setSelectMode(false);
         currentDate = tgt;
@@ -760,8 +761,6 @@
   });
 
   deleteSelBtn.addEventListener('click', function () {
-    var count = selectedIds.size;
-    if (!confirm('Move ' + count + ' item' + (count !== 1 ? 's' : '') + ' to trash?')) return;
     DB.getAllTodos().then(function (all) {
       return snapshotForUndo().then(function () {
         var ops = [];
@@ -892,7 +891,6 @@
         permBtn.className   = 'setting-btn danger-btn';
         permBtn.textContent = 'Delete forever';
         permBtn.addEventListener('click', function () {
-          if (!confirm('Permanently delete "' + item.text + '"?')) return;
           DB.deleteFromTrash(item.id).then(renderTrash);
         });
 
@@ -908,7 +906,6 @@
   emptyTrash.addEventListener('click', function () {
     DB.getAllTrash().then(function (items) {
       if (!items.length) return;
-      if (!confirm('Permanently delete all ' + items.length + ' item(s) in trash?')) return;
       DB.clearTrash().then(renderTrash);
     });
   });
@@ -979,7 +976,10 @@
                keyToDate(t.listDate) < keyToDate(tgt);
       }).forEach(function (t) {
         var key = t.panel + '|' + t.text.trim().toLowerCase();
-        if (todaySet.has(key)) return;
+        if (todaySet.has(key)) {
+          ops.push(DB.deleteTodo(t.id));
+          return;
+        }
         var now = Date.now();
         var copy = Object.assign({}, t, {
           id:        makeId(),
@@ -990,6 +990,7 @@
           sortOrder: now + carried,
         });
         ops.push(DB.putTodo(copy));
+        ops.push(DB.deleteTodo(t.id));
         carried++;
       });
       return Promise.all(ops);
