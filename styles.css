@@ -486,7 +486,8 @@ body {
   font-size: .88rem;
 }
 .edit-btn:hover  { color: var(--mw-metallic); background: var(--bg-hover); }
-.danger-icon:hover { color: #c0392b; background: #fdf0ef; }
+.archive-icon { opacity: 0.55; font-size: .85em; }
+.archive-icon:hover { opacity: 1; background: var(--bg-hover); }
 
 /* Complete checkbox — blue circle on right */
 .chk-label {

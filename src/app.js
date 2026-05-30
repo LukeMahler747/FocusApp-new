@@ -865,7 +865,7 @@
           ? (settings.nameLeft  || 'Panel 1')
           : (settings.nameRight || 'Panel 2');
         var delDate = item.deletedAt ? new Date(item.deletedAt).toLocaleString() : '';
-        metaEl.textContent = item.listDate + ' · ' + panelName + ' · deleted ' + delDate;
+        metaEl.textContent = item.listDate + ' · ' + panelName + ' · archived ' + delDate;
 
         info.appendChild(nameEl);
         info.appendChild(metaEl);

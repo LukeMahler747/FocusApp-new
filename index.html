@@ -33,7 +33,7 @@
       </div>
       <button class="icon-btn" id="undo-btn" title="Undo (Ctrl+Z)" disabled>↩</button>
       <button class="icon-btn" id="redo-btn" title="Redo (Ctrl+Y)" disabled>↪</button>
-      <button class="icon-btn" id="trash-btn" title="Trash">🗑</button>
+      <button class="icon-btn" id="trash-btn" title="Archive">📦</button>
       <button class="icon-btn" id="sync-btn" title="Force sync">↺</button>
       <button class="icon-btn" id="settings-btn" title="Settings">⚙</button>
     </div>
@@ -45,7 +45,7 @@
     <button id="copy-plain-btn">Copy as text</button>
     <button id="export-sel-btn">Export</button>
     <button id="carry-sel-btn">⤴ Carry to Today</button>
-    <button id="delete-sel-btn" class="danger">Delete selected</button>
+    <button id="delete-sel-btn" class="danger">Archive selected</button>
     <button id="deselect-btn">✕ Done</button>
   </div>
 
@@ -153,11 +153,11 @@
     </div>
   </aside>
 
-  <!-- TRASH DRAWER -->
+  <!-- ARCHIVE DRAWER -->
   <div class="overlay hidden" id="trash-overlay"></div>
   <aside class="drawer hidden" id="trash-drawer">
     <div class="drawer-header">
-      <h2>Trash</h2>
+      <h2>Archive</h2>
       <button class="icon-btn close-btn" id="close-trash">✕</button>
     </div>
     <p class="setting-hint" style="padding:10px 16px;">Restore items or permanently delete them.</p>
@@ -235,7 +235,7 @@
       <span class="item-links hidden"></span>
       <span class="item-notes hidden" title="">📝</span>
       <button class="edit-btn icon-btn" title="Edit">✎</button>
-      <button class="del-btn icon-btn danger-icon" title="Delete">✕</button>
+      <button class="del-btn icon-btn archive-icon" title="Archive">📦</button>
     </li>
   </template>
 
