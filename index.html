@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FocusApp — MahlerWorks</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23274D77'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%236596CD' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='5' fill='none' stroke='%2393B5DC' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='2' fill='%23FFFFFF'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="header-left">
+      <span class="brand">FocusApp</span>
+      <span class="date-key" id="date-key"></span>
+    </div>
+    <div class="header-center">
+      <div class="day-split-bar" id="day-split-bar" title="Which panel leads the day">
+        <span class="ds-label">Day starts with</span>
+        <button class="ds-toggle-btn" id="ds-toggle">
+          <span id="ds-left-name">Panel 1</span>
+          <span class="ds-arrow">⇄</span>
+          <span id="ds-right-name">Panel 2</span>
+        </button>
+        <span class="ds-time" id="ds-switch-time"></span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="online-pill" id="online-pill">
+        <span class="dot" id="online-dot"></span>
+        <span id="online-label">?</span>
+      </div>
+      <button class="icon-btn" id="undo-btn" title="Undo (Ctrl+Z)" disabled>↩</button>
+      <button class="icon-btn" id="redo-btn" title="Redo (Ctrl+Y)" disabled>↪</button>
+      <button class="icon-btn" id="trash-btn" title="Trash">🗑</button>
+      <button class="icon-btn" id="sync-btn" title="Force sync">↺</button>
+      <button class="icon-btn" id="settings-btn" title="Settings">⚙</button>
+    </div>
+  </header>
+
+  <!-- MULTI-SELECT TOOLBAR -->
+  <div class="select-toolbar hidden" id="select-toolbar">
+    <span id="select-count">0 selected</span>
+    <button id="copy-plain-btn">Copy as text</button>
+    <button id="export-sel-btn">Export</button>
+    <button id="carry-sel-btn">⤴ Carry to Today</button>
+    <button id="delete-sel-btn" class="danger">Delete selected</button>
+    <button id="deselect-btn">✕ Done</button>
+  </div>
+
+  <!-- DATE NAV -->
+  <div class="date-nav">
+    <button class="nav-btn" id="prev-btn">‹ Prev</button>
+    <span class="date-label" id="date-label"></span>
+    <button class="nav-btn" id="next-btn">Next ›</button>
+    <button class="nav-btn today-btn" id="today-btn">Today</button>
+    <button class="nav-btn carry-btn hidden" id="carry-btn">⤴ Carry Forward</button>
+    <button class="nav-btn select-mode-btn" id="select-mode-btn">Select</button>
+  </div>
+
+  <!-- PENDING CARRY BANNER (shown on today when past incomplete items exist) -->
+  <div class="carry-banner hidden" id="carry-banner">
+    <span class="carry-banner-msg" id="carry-banner-msg"></span>
+    <button class="carry-banner-btn" id="carry-banner-btn">⤴ Carry all forward</button>
+    <button class="carry-banner-dismiss" id="carry-banner-dismiss">✕</button>
+  </div>
+
+  <!-- PANELS -->
+  <main class="panels" id="panels">
+    <section class="panel" id="panel-left" data-panel="left">
+      <div class="panel-banner" id="banner-left"></div>
+      <div class="panel-header">
+        <h2 class="panel-title" id="title-left">Panel 1</h2>
+      </div>
+      <form class="add-form" id="form-left">
+        <input class="add-input" name="text" placeholder="Quick add…" autocomplete="off" required />
+        <button class="add-btn" type="submit">＋ Add</button>
+      </form>
+      <ul class="todo-list" id="list-left" data-panel="left"></ul>
+      <details class="done-section" id="done-left" open>
+        <summary class="done-toggle">
+          Completed <span class="done-count" id="done-count-left">0</span>
+        </summary>
+        <ul class="todo-list done-list" id="done-list-left" data-panel="left"></ul>
+      </details>
+    </section>
+
+    <section class="panel" id="panel-right" data-panel="right">
+      <div class="panel-banner" id="banner-right"></div>
+      <div class="panel-header">
+        <h2 class="panel-title" id="title-right">Panel 2</h2>
+      </div>
+      <form class="add-form" id="form-right">
+        <input class="add-input" name="text" placeholder="Quick add…" autocomplete="off" required />
+        <button class="add-btn" type="submit">＋ Add</button>
+      </form>
+      <ul class="todo-list" id="list-right" data-panel="right"></ul>
+      <details class="done-section" id="done-right" open>
+        <summary class="done-toggle">
+          Completed <span class="done-count" id="done-count-right">0</span>
+        </summary>
+        <ul class="todo-list done-list" id="done-list-right" data-panel="right"></ul>
+      </details>
+    </section>
+  </main>
+
+  <!-- SETTINGS DRAWER -->
+  <div class="overlay hidden" id="settings-overlay"></div>
+  <aside class="drawer hidden" id="settings-drawer">
+    <div class="drawer-header">
+      <h2>Settings</h2>
+      <button class="icon-btn close-btn" id="close-settings">✕</button>
+    </div>
+    <div class="setting-group">
+      <label class="setting-label">Left panel name</label>
+      <input class="setting-input" id="set-name-left" type="text" placeholder="Panel 1" />
+    </div>
+    <div class="setting-group">
+      <label class="setting-label">Right panel name</label>
+      <input class="setting-input" id="set-name-right" type="text" placeholder="Panel 2" />
+    </div>
+    <hr class="divider" />
+    <div class="setting-group">
+      <label class="setting-label">Day-split time</label>
+      <div class="time-row">
+        <input class="setting-input time-input" id="set-split-time" type="time" value="12:00" />
+        <span class="time-preview" id="split-preview">12:00 PM</span>
+      </div>
+      <p class="setting-hint">Panels swap order at this time each day.</p>
+    </div>
+    <hr class="divider" />
+    <div class="setting-group">
+      <label class="setting-label">Theme</label>
+      <select class="setting-input" id="set-theme">
+        <option value="system">System (auto)</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </div>
+    <hr class="divider" />
+    <div class="setting-group">
+      <label class="setting-label">Export all data</label>
+      <button class="setting-btn" id="export-all-btn">Export JSON</button>
+    </div>
+    <div class="setting-group">
+      <label class="setting-label">Import data</label>
+      <input type="file" id="import-file" accept=".json" class="hidden" />
+      <button class="setting-btn" id="import-btn">Import JSON</button>
+    </div>
+    <div class="drawer-footer">
+      <button class="setting-btn primary" id="save-settings-btn">Save Settings</button>
+    </div>
+  </aside>
+
+  <!-- TRASH DRAWER -->
+  <div class="overlay hidden" id="trash-overlay"></div>
+  <aside class="drawer hidden" id="trash-drawer">
+    <div class="drawer-header">
+      <h2>Trash</h2>
+      <button class="icon-btn close-btn" id="close-trash">✕</button>
+    </div>
+    <p class="setting-hint" style="padding:10px 16px;">Restore items or permanently delete them.</p>
+    <ul class="trash-list" id="trash-list"></ul>
+    <div class="drawer-footer">
+      <button class="setting-btn danger-btn" id="empty-trash-btn">Delete all permanently</button>
+    </div>
+  </aside>
+
+  <!-- EDIT MODAL -->
+  <div class="overlay hidden" id="modal-overlay"></div>
+  <div class="modal hidden" id="item-modal">
+    <div class="modal-header">
+      <h3>Edit Item</h3>
+      <button class="icon-btn close-btn" id="close-modal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Task</label>
+        <input type="text" id="m-text" placeholder="Task description" />
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Priority</label>
+          <select id="m-priority">
+            <option value="">—</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="urgent">Urgent</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Due Date</label>
+          <input type="date" id="m-due" />
+        </div>
+        <div class="field">
+          <label>Status</label>
+          <select id="m-status">
+            <option value="">—</option>
+            <option value="not-started">Not Started</option>
+            <option value="in-progress">In Progress</option>
+            <option value="blocked">Blocked</option>
+            <option value="done">Done</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Links (comma-separated)</label>
+        <input type="text" id="m-links" placeholder="https://…" />
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="m-notes" rows="3" placeholder="Additional context…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="setting-btn" id="modal-cancel">Cancel</button>
+      <button class="setting-btn primary" id="modal-save">Save</button>
+    </div>
+  </div>
+
+  <!-- ITEM TEMPLATE -->
+  <template id="item-tpl">
+    <li class="todo-item" draggable="true">
+      <span class="drag-handle" title="Drag to reorder">⠿</span>
+      <input type="checkbox" class="sel-chk hidden" title="Select item" />
+      <label class="chk-label" title="Mark complete">
+        <input type="checkbox" class="done-chk" />
+      </label>
+      <span class="item-text"></span>
+      <span class="item-priority badge hidden"></span>
+      <span class="item-due hidden"></span>
+      <span class="item-status badge hidden"></span>
+      <span class="item-links hidden"></span>
+      <span class="item-notes hidden" title="">📝</span>
+      <button class="edit-btn icon-btn" title="Edit">✎</button>
+      <button class="del-btn icon-btn danger-icon" title="Delete">✕</button>
+    </li>
+  </template>
+
+  <script src="src/db.js"></script>
+  <script src="src/app.js"></script>
+</body>
+</html>
