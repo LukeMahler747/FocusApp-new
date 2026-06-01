@@ -917,7 +917,9 @@
 
   exportAllBtn.addEventListener('click', function () {
     DB.getAllTodos().then(function (all) {
-      downloadJson(all, 'focusapp-export-' + todayKey() + '.json');
+      DB.getAllSettings().then(function (s) {
+        downloadJson({ todos: all, settings: s }, 'focusapp-export-' + todayKey() + '.json');
+      });
     });
   });
 
@@ -1248,8 +1250,15 @@
     var gistId = settings.gistId;
     if (!token || !gistId) return;
     DB.getAllTodos().then(function (all) {
+      return DB.getAllSettings().then(function (s) {
+        // Strip credentials from the saved settings copy
+        var savedSettings = Object.assign({}, s);
+        delete savedSettings.gistToken;
+        return { todos: all, settings: savedSettings };
+      });
+    }).then(function (payload) {
       var body = JSON.stringify({
-        files: { 'focusapp-data.json': { content: JSON.stringify(all, null, 2) } }
+        files: { 'focusapp-data.json': { content: JSON.stringify(payload, null, 2) } }
       });
       fetch('https://api.github.com/gists/' + gistId, {
         method: 'PATCH',
@@ -1289,13 +1298,26 @@
     }).then(function (data) {
       var file = data.files && data.files['focusapp-data.json'];
       if (!file) throw new Error('focusapp-data.json not found in Gist');
-      var items = JSON.parse(file.content);
-      if (!Array.isArray(items)) throw new Error('Expected JSON array');
-      var ops = items
+      var payload = JSON.parse(file.content);
+
+      // Support both old format (plain array) and new format ({ todos, settings })
+      var todos    = Array.isArray(payload) ? payload : (payload.todos || []);
+      var savedSettings = Array.isArray(payload) ? {} : (payload.settings || {});
+
+      var ops = todos
         .filter(function (item) { return item.id && item.text; })
         .map(function (item) { return DB.putTodo(item); });
+
+      // Restore settings (skip credentials — keep current token/gistId)
+      Object.keys(savedSettings).forEach(function (key) {
+        if (key === 'gistToken' || key === 'gistId') return;
+        settings[key] = savedSettings[key];
+        ops.push(DB.setSetting(key, savedSettings[key]));
+      });
+
       return Promise.all(ops);
     }).then(function () {
+      applySettings();
       render();
       showToast('Restored from Gist');
     }).catch(function (err) {
