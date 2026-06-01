@@ -595,7 +595,8 @@
       input.select();
 
       function commit() {
-        var val = input.value.trim();
+        var raw = input.value;
+        var val = raw.trim() || raw;
         if (val && val !== todo.text) {
           snapshotForUndo().then(function () {
             todo.text      = val;
@@ -743,7 +744,8 @@
 
   el('form-left').addEventListener('submit', function (e) {
     e.preventDefault();
-    var text = e.target.text.value.trim();
+    var raw  = e.target.text.value;
+    var text = raw.trim() || raw;
     if (!text) return;
     e.target.reset();
     addItem('left', text);
@@ -751,7 +753,8 @@
 
   el('form-right').addEventListener('submit', function (e) {
     e.preventDefault();
-    var text = e.target.text.value.trim();
+    var raw  = e.target.text.value;
+    var text = raw.trim() || raw;
     if (!text) return;
     e.target.reset();
     addItem('right', text);

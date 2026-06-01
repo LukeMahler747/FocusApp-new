@@ -31,6 +31,7 @@
 - [x] Archive button updated to box/archive SVG icon
 - [x] Export and Gist sync include panel names and all settings
 - [x] Checklist banners — even padding above and below, consistent gap between multiple banners
+- [x] Allow whitespace-only items (e.g. a single space) as visual spacers in todo lists
 
 ## To Do
 
