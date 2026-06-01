@@ -255,18 +255,24 @@
     currentDate = shiftKey(currentDate, -1);
     updateDateUI();
     render();
+    renderMorning();
+    renderAllClBanners();
   });
 
   nextBtn.addEventListener('click', function () {
     currentDate = shiftKey(currentDate, 1);
     updateDateUI();
     render();
+    renderMorning();
+    renderAllClBanners();
   });
 
   todayBtnEl.addEventListener('click', function () {
     currentDate = todayKey();
     updateDateUI();
     render();
+    renderMorning();
+    renderAllClBanners();
   });
 
   carryBtn.addEventListener('click', function () {
@@ -401,6 +407,7 @@
     el('set-gist-token').value = settings.gistToken || '';
     el('set-gist-id').value    = settings.gistId    || '';
     renderMorningTemplate();
+    renderClList();
     updateSyncUI();
     updateSplitPreview();
     show(settingsOvl);
@@ -951,8 +958,12 @@
         Promise.all(ops).then(function () {
           importFile.value = '';
           applySettings();
+          renderMorningTemplate();
+          renderClList();
           closeSettingsFn();
           render();
+          renderMorning();
+          renderAllClBanners();
         });
       } catch (err) {
         alert('Import failed: ' + err.message);
@@ -1331,7 +1342,11 @@
       return Promise.all(ops);
     }).then(function () {
       applySettings();
+      renderMorningTemplate();
+      renderClList();
       render();
+      renderMorning();
+      renderAllClBanners();
       showToast('Restored from Gist');
     }).catch(function (err) {
       showToast('Restore failed: ' + err.message, 5000);
@@ -1428,6 +1443,618 @@
     });
   }
 
+  // ── Scheduled Checklists ──────────────────────────────────────────────────
+
+  // Checklists are stored as a JSON array in settings key 'checklists'.
+  // Each entry: { id, name, color, persist, schedule, startDate, items[] }
+  // Per-day state in DB.checklistDays, keyed by listId + '_' + dateKey:
+  //   { stateKey, listId, dateKey, items[{text,done}], carriedFrom }
+
+  var clEditingId = null;   // id of checklist being edited (null = new)
+  var clModalItems = [];    // working copy of items in the editor
+
+  function getChecklists() {
+    return settings.checklists || [];
+  }
+
+  function saveChecklists(arr) {
+    settings.checklists = arr;
+    DB.setSetting('checklists', arr);
+  }
+
+  // ── Schedule matching ──────────────────────────────────────────────────────
+
+  function checklistAppliesToDate(cl, dateKey) {
+    var d = keyToDate(dateKey);
+    var today = keyToDate(todayKey());
+
+    // Respect start date
+    if (cl.startDate) {
+      var start = new Date(cl.startDate + 'T00:00:00');
+      if (d < start) return false;
+    }
+
+    var sched = cl.schedule || {};
+    var type  = sched.type || 'daily';
+    var dow   = d.getDay();        // 0=Sun … 6=Sat
+    var date  = d.getDate();
+    var month = d.getMonth();
+
+    switch (type) {
+      case 'daily':
+        return true;
+
+      case 'weekdays':
+        return dow >= 1 && dow <= 5;
+
+      case 'weekends':
+        return dow === 0 || dow === 6;
+
+      case 'dow': {
+        var days = sched.days || [];
+        return days.indexOf(dow) !== -1;
+      }
+
+      case 'every-n-days': {
+        var n = sched.n || 7;
+        var start2 = cl.startDate ? new Date(cl.startDate + 'T00:00:00') : today;
+        start2.setHours(0, 0, 0, 0);
+        var diff = Math.round((d - start2) / 86400000);
+        return diff >= 0 && diff % n === 0;
+      }
+
+      case 'biweekly':
+        sched = Object.assign({}, sched, { type: 'weekly', n: 2 });
+        // fall through
+      case 'weekly': {
+        var targetDow = sched.day !== undefined ? +sched.day : 1;
+        if (dow !== targetDow) return false;
+        var wn = sched.n || 1;
+        if (wn <= 1) return true;
+        var start3 = cl.startDate ? new Date(cl.startDate + 'T00:00:00') : today;
+        start3.setHours(0, 0, 0, 0);
+        var weekDiff = Math.round((d - start3) / 604800000);
+        return weekDiff >= 0 && weekDiff % wn === 0;
+      }
+
+      case 'monthly-date': {
+        var md = sched.date;
+        if (md === 'last') {
+          var last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+          return date === last;
+        }
+        return date === +md;
+      }
+
+      case 'monthly-weekday': {
+        var pos = +sched.pos;   // 1..4 or -1 (last)
+        var wd  = +sched.day;
+        if (dow !== wd) return false;
+        if (pos === -1) {
+          var nextMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+          var lastMatch = nextMonth.getDate() - ((nextMonth.getDay() - wd + 7) % 7);
+          return date === lastMatch;
+        }
+        return Math.ceil(date / 7) === pos;
+      }
+
+      case 'monthly-first-weekday': {
+        var first = new Date(d.getFullYear(), d.getMonth(), 1);
+        var fd = first.getDay();
+        var offset = (fd === 0 || fd === 6)
+          ? (8 - fd) % 7 || 1
+          : 0;
+        return date === 1 + offset;
+      }
+
+      case 'monthly-last-weekday': {
+        var lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+        var ld = lastDay.getDay();
+        var sub = (ld === 0) ? 2 : (ld === 6) ? 1 : 0;
+        return date === lastDay.getDate() - sub;
+      }
+
+      case 'quarterly': {
+        var qm = +sched.month || 0;
+        var qd = +sched.day   || 1;
+        var monthOffset = (month - qm + 12) % 12;
+        return monthOffset % 3 === 0 && date === qd;
+      }
+
+      case 'yearly': {
+        return month === +sched.month && date === +sched.day;
+      }
+
+      case 'once': {
+        if (!sched.date) return false;
+        var od = new Date(sched.date + 'T00:00:00');
+        return d.getFullYear() === od.getFullYear() &&
+               d.getMonth()    === od.getMonth()    &&
+               d.getDate()     === od.getDate();
+      }
+
+      default:
+        return false;
+    }
+  }
+
+  function scheduleLabel(cl) {
+    var sched = cl.schedule || {};
+    var DAYS  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    switch (sched.type) {
+      case 'daily':                    return 'Daily';
+      case 'weekdays':                 return 'Weekdays';
+      case 'weekends':                 return 'Weekends';
+      case 'dow':                      return (sched.days||[]).map(function(d){return DAYS[d];}).join(', ');
+      case 'every-n-days':             return 'Every ' + (sched.n||7) + ' days';
+      case 'weekly':                   return 'Every ' + (sched.n||1) + 'w on ' + DAYS[sched.day||1];
+      case 'biweekly':                 return 'Bi-weekly on ' + DAYS[sched.day||1];
+      case 'monthly-date':             return 'Monthly on ' + (sched.date==='last'?'last day':sched.date+'th');
+      case 'monthly-weekday': {
+        var pos = +sched.pos;
+        var posLabel = pos === -1 ? 'Last' : ['','1st','2nd','3rd','4th'][pos] || pos+'th';
+        return 'Monthly — ' + posLabel + ' ' + DAYS[sched.day||1];
+      }
+      case 'monthly-first-weekday':    return 'First weekday/month';
+      case 'monthly-last-weekday':     return 'Last weekday/month';
+      case 'quarterly':                return 'Quarterly';
+      case 'yearly':                   return 'Yearly ' + MONTHS[sched.month||0] + ' ' + (sched.day||1);
+      case 'once':                     return 'Once: ' + (sched.date||'');
+      default:                         return '';
+    }
+  }
+
+  // ── Settings UI — checklist list ──────────────────────────────────────────
+
+  function renderClList() {
+    var ul = el('cl-list');
+    ul.innerHTML = '';
+    getChecklists().forEach(function (cl) {
+      var li = document.createElement('li');
+      li.className = 'cl-list-item';
+
+      var swatch = document.createElement('span');
+      swatch.className = 'cl-list-swatch';
+      swatch.style.background = cl.color || '#2980b9';
+
+      var name = document.createElement('span');
+      name.className   = 'cl-list-name';
+      name.textContent = cl.name || '(unnamed)';
+
+      var schedEl = document.createElement('span');
+      schedEl.className   = 'cl-list-sched';
+      schedEl.textContent = scheduleLabel(cl);
+
+      var editBtn = document.createElement('button');
+      editBtn.className   = 'cl-list-edit';
+      editBtn.title       = 'Edit';
+      editBtn.textContent = '✎';
+      editBtn.addEventListener('click', function () { openClModal(cl.id); });
+
+      var delBtn = document.createElement('button');
+      delBtn.className   = 'cl-list-del';
+      delBtn.title       = 'Delete';
+      delBtn.textContent = '✕';
+      delBtn.addEventListener('click', function () { deleteChecklist(cl.id); });
+
+      li.appendChild(swatch);
+      li.appendChild(name);
+      li.appendChild(schedEl);
+      li.appendChild(editBtn);
+      li.appendChild(delBtn);
+      ul.appendChild(li);
+    });
+  }
+
+  function deleteChecklist(id) {
+    var lists = getChecklists().filter(function (c) { return c.id !== id; });
+    saveChecklists(lists);
+    renderClList();
+    renderAllClBanners();
+  }
+
+  // ── Checklist editor modal ────────────────────────────────────────────────
+
+  var clSchedSubIds = [
+    'cl-sub-dow', 'cl-sub-every-n', 'cl-sub-weekly', 'cl-sub-biweekly',
+    'cl-sub-monthly-date', 'cl-sub-monthly-weekday', 'cl-sub-quarterly',
+    'cl-sub-yearly', 'cl-sub-once'
+  ];
+  var clSchedTypeMap = {
+    'dow': 'cl-sub-dow',
+    'every-n-days': 'cl-sub-every-n',
+    'weekly': 'cl-sub-weekly',
+    'biweekly': 'cl-sub-biweekly',
+    'monthly-date': 'cl-sub-monthly-date',
+    'monthly-weekday': 'cl-sub-monthly-weekday',
+    'quarterly': 'cl-sub-quarterly',
+    'yearly': 'cl-sub-yearly',
+    'once': 'cl-sub-once',
+  };
+
+  function showClSchedSub(type) {
+    clSchedSubIds.forEach(function (id) { hide(el(id)); });
+    var target = clSchedTypeMap[type];
+    if (target) show(el(target));
+  }
+
+  el('cl-sched-type').addEventListener('change', function () {
+    showClSchedSub(this.value);
+  });
+
+  function renderClItemsList() {
+    var ul = el('cl-items-list');
+    ul.innerHTML = '';
+    clModalItems.forEach(function (text, idx) {
+      var li = document.createElement('li');
+      li.className = 'cl-item-row';
+
+      var span = document.createElement('span');
+      span.className   = 'cl-item-text';
+      span.textContent = text;
+
+      var del = document.createElement('button');
+      del.className   = 'cl-item-del';
+      del.type        = 'button';
+      del.title       = 'Remove';
+      del.textContent = '✕';
+      del.addEventListener('click', function () {
+        clModalItems.splice(idx, 1);
+        renderClItemsList();
+      });
+
+      li.appendChild(span);
+      li.appendChild(del);
+      ul.appendChild(li);
+    });
+  }
+
+  el('cl-item-add-btn').addEventListener('click', function () {
+    var inp = el('cl-item-new');
+    var raw = inp.value;
+    var val = raw.trim() || raw;
+    if (!val) return;
+    clModalItems.push(val);
+    renderClItemsList();
+    inp.value = '';
+    inp.focus();
+  });
+
+  el('cl-item-new').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); el('cl-item-add-btn').click(); }
+  });
+
+  function openClModal(id) {
+    var cl = id ? getChecklists().find(function (c) { return c.id === id; }) : null;
+    clEditingId  = id || null;
+    clModalItems = cl ? cl.items.slice() : [];
+
+    el('cl-modal-title').textContent = cl ? 'Edit Checklist' : 'New Checklist';
+    el('cl-name').value        = cl ? cl.name       : '';
+    el('cl-color').value       = cl ? (cl.color     || '#2980b9') : '#2980b9';
+    el('cl-persist').value     = cl ? (cl.persist   || 'reset')   : 'reset';
+    el('cl-start-date').value  = cl ? (cl.startDate || '')        : '';
+
+    var sched = cl ? (cl.schedule || {}) : { type: 'daily' };
+    el('cl-sched-type').value = sched.type || 'daily';
+    showClSchedSub(sched.type || 'daily');
+
+    // Restore sub-option values
+    if (sched.type === 'dow') {
+      el('cl-sub-dow').querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+        cb.checked = (sched.days || []).indexOf(+cb.value) !== -1;
+      });
+    }
+    if (sched.type === 'every-n-days') el('cl-every-n').value = sched.n || 7;
+    if (sched.type === 'weekly') {
+      el('cl-weekly-n').value   = sched.n   || 1;
+      el('cl-weekly-day').value = sched.day !== undefined ? sched.day : 1;
+    }
+    if (sched.type === 'biweekly') {
+      el('cl-biweekly-day').value = sched.day !== undefined ? sched.day : 1;
+    }
+    if (sched.type === 'monthly-date')    el('cl-monthly-date').value = sched.date || 1;
+    if (sched.type === 'monthly-weekday') {
+      el('cl-mwd-pos').value = sched.pos !== undefined ? sched.pos : 1;
+      el('cl-mwd-day').value = sched.day !== undefined ? sched.day : 1;
+    }
+    if (sched.type === 'quarterly') {
+      el('cl-quarterly-month').value = sched.month || 0;
+      el('cl-quarterly-day').value   = sched.day   || 1;
+    }
+    if (sched.type === 'yearly') {
+      el('cl-yearly-month').value = sched.month || 0;
+      el('cl-yearly-day').value   = sched.day   || 1;
+    }
+    if (sched.type === 'once') el('cl-once-date').value = sched.date || '';
+
+    renderClItemsList();
+    show(el('cl-modal-overlay'));
+    show(el('cl-modal'));
+    el('cl-name').focus();
+  }
+
+  function closeClModal() {
+    hide(el('cl-modal-overlay'));
+    hide(el('cl-modal'));
+    clEditingId  = null;
+    clModalItems = [];
+  }
+
+  function readClSchedule() {
+    var type = el('cl-sched-type').value;
+    var sched = { type: type };
+    switch (type) {
+      case 'dow':
+        sched.days = [];
+        el('cl-sub-dow').querySelectorAll('input[type=checkbox]:checked').forEach(function (cb) {
+          sched.days.push(+cb.value);
+        });
+        break;
+      case 'every-n-days':
+        sched.n = +el('cl-every-n').value || 7;
+        break;
+      case 'weekly':
+        sched.n   = +el('cl-weekly-n').value   || 1;
+        sched.day = +el('cl-weekly-day').value;
+        break;
+      case 'biweekly':
+        sched.day = +el('cl-biweekly-day').value;
+        break;
+      case 'monthly-date':
+        sched.date = el('cl-monthly-date').value;
+        break;
+      case 'monthly-weekday':
+        sched.pos = +el('cl-mwd-pos').value;
+        sched.day = +el('cl-mwd-day').value;
+        break;
+      case 'quarterly':
+        sched.month = +el('cl-quarterly-month').value;
+        sched.day   = +el('cl-quarterly-day').value || 1;
+        break;
+      case 'yearly':
+        sched.month = +el('cl-yearly-month').value;
+        sched.day   = +el('cl-yearly-day').value || 1;
+        break;
+      case 'once':
+        sched.date = el('cl-once-date').value;
+        break;
+    }
+    return sched;
+  }
+
+  el('cl-modal-save').addEventListener('click', function () {
+    var name = el('cl-name').value.trim();
+    if (!name) { el('cl-name').focus(); return; }
+
+    var lists = getChecklists();
+    var existing = clEditingId ? lists.find(function (c) { return c.id === clEditingId; }) : null;
+
+    var cl = {
+      id:        clEditingId || makeId(),
+      name:      name,
+      color:     el('cl-color').value,
+      persist:   el('cl-persist').value,
+      schedule:  readClSchedule(),
+      startDate: el('cl-start-date').value,
+      items:     clModalItems.slice(),
+    };
+
+    if (existing) {
+      var idx = lists.indexOf(existing);
+      lists[idx] = cl;
+    } else {
+      lists.push(cl);
+    }
+
+    saveChecklists(lists);
+    renderClList();
+    renderAllClBanners();
+    closeClModal();
+  });
+
+  el('cl-modal-cancel').addEventListener('click', closeClModal);
+  el('cl-modal-close').addEventListener('click',  closeClModal);
+  el('cl-modal-overlay').addEventListener('click', closeClModal);
+  el('cl-add-btn').addEventListener('click', function () { openClModal(null); });
+
+  // ── Checklist banners ─────────────────────────────────────────────────────
+
+  var clBannerExpanded = {};   // listId → boolean
+
+  function renderAllClBanners() {
+    // Remove existing custom banners
+    document.querySelectorAll('.cl-banner').forEach(function (b) { b.remove(); });
+
+    var morningEl = el('morning-banner');
+    var lists = getChecklists();
+
+    // Determine which lists apply to currentDate
+    // Also check for carried state (persist=persist lists that have an active carry)
+    var dateKey = currentDate;
+    var toShow  = [];
+
+    var promises = lists.map(function (cl) {
+      if (!cl.items || !cl.items.length) return Promise.resolve();
+      var stateKey = cl.id + '_' + dateKey;
+      return DB.getChecklistDay(stateKey).then(function (state) {
+        var applies = checklistAppliesToDate(cl, dateKey);
+
+        if (!applies && cl.persist === 'persist') {
+          // Check if it was carried from a prior day
+          if (state && state.carriedFrom) applies = true;
+        }
+
+        if (!applies && !state) return;
+
+        // If it applies and no state yet, create fresh state
+        if (!state) {
+          state = {
+            stateKey:    stateKey,
+            listId:      cl.id,
+            dateKey:     dateKey,
+            items:       cl.items.map(function (t) { return { text: t, done: false }; }),
+            carriedFrom: null,
+          };
+          DB.putChecklistDay(state);
+        } else {
+          // Sync template changes
+          var existing2 = state.items.map(function (i) { return i.text; });
+          cl.items.forEach(function (t) {
+            if (existing2.indexOf(t) === -1) state.items.push({ text: t, done: false });
+          });
+          state.items = state.items.filter(function (i) {
+            return cl.items.indexOf(i.text) !== -1;
+          });
+          state.items.sort(function (a, b) {
+            return cl.items.indexOf(a.text) - cl.items.indexOf(b.text);
+          });
+          DB.putChecklistDay(state);
+        }
+
+        toShow.push({ cl: cl, state: state, applies: applies });
+      });
+    });
+
+    Promise.all(promises).then(function () {
+      var anchor = morningEl;
+      toShow.forEach(function (entry) {
+        var banner = buildClBanner(entry.cl, entry.state);
+        anchor.insertAdjacentElement('afterend', banner);
+        anchor = banner;
+      });
+    });
+  }
+
+  function buildClBanner(cl, state) {
+    var banner = document.createElement('div');
+    banner.className = 'cl-banner';
+    banner.dataset.clId = cl.id;
+
+    var total    = state.items.length;
+    var doneCount = state.items.filter(function (i) { return i.done; }).length;
+    var complete = doneCount === total && total > 0;
+    if (complete) banner.classList.add('complete');
+
+    var expanded = clBannerExpanded[cl.id] !== undefined
+      ? clBannerExpanded[cl.id]
+      : false;
+    if (expanded) banner.classList.add('expanded');
+
+    // Bar
+    var bar = document.createElement('div');
+    bar.className = 'cl-bar';
+    bar.style.background = cl.color || '#2980b9';
+
+    var labelEl = document.createElement('span');
+    labelEl.className   = 'cl-bar-label';
+    labelEl.textContent = cl.name;
+
+    var progressEl = document.createElement('span');
+    progressEl.className   = 'cl-bar-progress';
+    progressEl.textContent = doneCount + ' / ' + total;
+
+    // Carry button (only on today view, for persist lists not yet complete and not already on today)
+    var isToday = currentDate === todayKey();
+    if (cl.persist === 'persist' && !complete && !isToday && !state.carriedFrom) {
+      // Don't add carry button on past days; it shows "pull to today"
+    }
+    if (cl.persist === 'persist' && !complete && !isToday) {
+      var carryBtn2 = document.createElement('button');
+      carryBtn2.className   = 'cl-bar-carry';
+      carryBtn2.textContent = '⤴ Pull to today';
+      carryBtn2.addEventListener('click', function (e) {
+        e.stopPropagation();
+        pullClToToday(cl, state);
+      });
+      bar.appendChild(labelEl);
+      bar.appendChild(progressEl);
+      bar.appendChild(carryBtn2);
+    } else {
+      bar.appendChild(labelEl);
+      bar.appendChild(progressEl);
+    }
+
+    var toggleBtn = document.createElement('button');
+    toggleBtn.className   = 'cl-bar-toggle icon-btn';
+    toggleBtn.title       = 'Expand / collapse';
+    toggleBtn.textContent = '▾';
+    bar.appendChild(toggleBtn);
+
+    // Body
+    var body = document.createElement('div');
+    body.className = 'cl-body' + (expanded ? '' : ' hidden');
+
+    var ul = document.createElement('ul');
+    ul.className = 'cl-item-list';
+
+    state.items.forEach(function (item, idx) {
+      var li = document.createElement('li');
+      li.className = 'cl-check-item' + (item.done ? ' done' : '');
+
+      var chk = document.createElement('input');
+      chk.type    = 'checkbox';
+      chk.checked = item.done;
+      chk.addEventListener('change', function () {
+        state.items[idx].done = chk.checked;
+        DB.putChecklistDay(state).then(function () {
+          renderAllClBanners();
+        });
+      });
+
+      var span = document.createElement('span');
+      span.className   = 'cl-check-item-text';
+      span.textContent = item.text;
+      span.addEventListener('click', function () { chk.click(); });
+
+      li.appendChild(chk);
+      li.appendChild(span);
+      ul.appendChild(li);
+    });
+
+    body.appendChild(ul);
+
+    bar.addEventListener('click', function () {
+      clBannerExpanded[cl.id] = !clBannerExpanded[cl.id];
+      banner.classList.toggle('expanded', clBannerExpanded[cl.id]);
+      body.classList.toggle('hidden',    !clBannerExpanded[cl.id]);
+    });
+
+    banner.appendChild(bar);
+    banner.appendChild(body);
+    return banner;
+  }
+
+  function pullClToToday(cl, sourceState) {
+    var today    = todayKey();
+    var stateKey = cl.id + '_' + today;
+    DB.getChecklistDay(stateKey).then(function (existing) {
+      if (existing && !existing.items.every(function (i) { return i.done; })) {
+        // Already on today and incomplete — just navigate
+        currentDate = today;
+        updateDateUI();
+        render();
+        renderAllClBanners();
+        return;
+      }
+      var newState = {
+        stateKey:    stateKey,
+        listId:      cl.id,
+        dateKey:     today,
+        items:       cl.items.map(function (t) { return { text: t, done: false }; }),
+        carriedFrom: sourceState.dateKey,
+      };
+      DB.putChecklistDay(newState).then(function () {
+        currentDate = today;
+        updateDateUI();
+        render();
+        renderAllClBanners();
+        showToast(cl.name + ' pulled to today');
+      });
+    });
+  }
+
   // ── Init ───────────────────────────────────────────────────────────────────
 
   DB.open().then(function () {
@@ -1442,6 +2069,7 @@
     applySettings();
     updateDateUI();
     renderMorning();
+    renderAllClBanners();
     scheduleMidnight();
     return render();
   }).then(function () {
