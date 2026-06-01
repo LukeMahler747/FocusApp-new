@@ -931,13 +931,23 @@
     var reader = new FileReader();
     reader.onload = function (e) {
       try {
-        var items = JSON.parse(e.target.result);
-        if (!Array.isArray(items)) throw new Error('Expected JSON array');
-        var ops = items
+        var payload = JSON.parse(e.target.result);
+        var todos        = Array.isArray(payload) ? payload : (payload.todos || []);
+        var savedSettings = Array.isArray(payload) ? {} : (payload.settings || {});
+
+        var ops = todos
           .filter(function (item) { return item.id && item.text; })
           .map(function (item)   { return DB.putTodo(item); });
+
+        Object.keys(savedSettings).forEach(function (key) {
+          if (key === 'gistToken' || key === 'gistId') return;
+          settings[key] = savedSettings[key];
+          ops.push(DB.setSetting(key, savedSettings[key]));
+        });
+
         Promise.all(ops).then(function () {
           importFile.value = '';
+          applySettings();
           closeSettingsFn();
           render();
         });
