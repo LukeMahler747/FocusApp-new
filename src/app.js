@@ -406,7 +406,6 @@
     el('set-theme').value      = settings.theme     || 'system';
     el('set-gist-token').value = settings.gistToken || '';
     el('set-gist-id').value    = settings.gistId    || '';
-    renderMorningTemplate();
     renderClList();
     updateSyncUI();
     updateSplitPreview();
@@ -958,7 +957,6 @@
         Promise.all(ops).then(function () {
           importFile.value = '';
           applySettings();
-          renderMorningTemplate();
           renderClList();
           closeSettingsFn();
           render();
@@ -1342,7 +1340,6 @@
       return Promise.all(ops);
     }).then(function () {
       applySettings();
-      renderMorningTemplate();
       renderClList();
       render();
       renderMorning();
@@ -1412,7 +1409,7 @@
       var complete = done === total && total > 0;
 
       morningBanner.classList.toggle('complete', complete);
-      morningBarProgress.textContent = done + ' / ' + total;
+      morningBarProgress.textContent = complete ? '✓ DONE' : done + ' / ' + total;
 
       morningList.innerHTML = '';
       record.items.forEach(function (item, idx) {
@@ -1932,9 +1929,9 @@
     banner.className = 'cl-banner';
     banner.dataset.clId = cl.id;
 
-    var total    = state.items.length;
+    var total     = state.items.length;
     var doneCount = state.items.filter(function (i) { return i.done; }).length;
-    var complete = doneCount === total && total > 0;
+    var complete  = doneCount === total && total > 0;
     if (complete) banner.classList.add('complete');
 
     var expanded = clBannerExpanded[cl.id] !== undefined
@@ -1953,7 +1950,7 @@
 
     var progressEl = document.createElement('span');
     progressEl.className   = 'cl-bar-progress';
-    progressEl.textContent = doneCount + ' / ' + total;
+    progressEl.textContent = complete ? '✓ DONE' : doneCount + ' / ' + total;
 
     // Carry button (only on today view, for persist lists not yet complete and not already on today)
     var isToday = currentDate === todayKey();
@@ -1999,6 +1996,8 @@
       chk.addEventListener('change', function () {
         state.items[idx].done = chk.checked;
         DB.putChecklistDay(state).then(function () {
+          var allDone = state.items.every(function (i) { return i.done; });
+          if (allDone) clBannerExpanded[cl.id] = false;
           renderAllClBanners();
         });
       });

@@ -31,6 +31,9 @@
 - [x] Archive button updated to box/archive SVG icon
 - [x] Export and Gist sync include panel names and all settings
 - [x] Checklist banners — even padding above and below, consistent gap between multiple banners
+- [x] Checklist banners auto-collapse when all items are checked
+- [x] Completed checklist banners show "✓ DONE" instead of progress count
+- [x] Removed Morning Process template editor from settings — manage via Scheduled Checklists instead
 - [x] Allow whitespace-only items (e.g. a single space) as visual spacers in todo lists
 
 ## To Do
