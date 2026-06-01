@@ -24,4 +24,8 @@
 ## To Do
 
 - [ ] Show a "Edited at [time]" note on each list item
+- [ ] Settings auto-save on change — no manual save action required
+- [ ] Archive button icon updated to a box/archive style icon
+- [ ] App automatically switches to "Today" when a new day rolls around
+- [ ] Carry Forward option no longer appears when viewing a previous day with no entries
 - [ ] (your next items here)

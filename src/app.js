@@ -65,15 +65,19 @@
 
   // ── State ──────────────────────────────────────────────────────────────────
 
-  var currentDate  = todayKey();
-  var settings     = {};
-  var selectedIds  = new Set();
-  var editingId    = null;
-  var dragSrcId    = null;
-  var undoStack    = [];
-  var redoStack    = [];
-  var selectMode   = false;
-  var doneOpen     = { left: true, right: true };
+  var currentDate       = todayKey();
+  var settings          = {};
+  var selectedIds       = new Set();
+  var editingId         = null;
+  var dragSrcId         = null;
+  var undoStack         = [];
+  var redoStack         = [];
+  var selectMode        = false;
+  var doneOpen          = { left: true, right: true };
+  var morningExpanded   = false;
+  var syncDirHandle     = null;   // FileSystemDirectoryHandle for folder sync
+  var syncDirty         = false;  // true when data changed since last folder write
+  var lastSyncedJson    = null;   // last JSON written, to detect changes
 
   // ── DOM refs (all assigned after DOM is ready) ─────────────────────────────
 
@@ -105,7 +109,6 @@
   var settingsOvl   = el('settings-overlay');
   var settingsDrw   = el('settings-drawer');
   var closeSettings = el('close-settings');
-  var saveSettings  = el('save-settings-btn');
   var exportAllBtn  = el('export-all-btn');
   var importBtn     = el('import-btn');
   var importFile    = el('import-file');
@@ -125,6 +128,14 @@
   var carryBannerMsg    = el('carry-banner-msg');
   var carryBannerBtn    = el('carry-banner-btn');
   var carryBannerDismiss = el('carry-banner-dismiss');
+
+  var morningBanner     = el('morning-banner');
+  var morningBar        = el('morning-bar');
+  var morningBarLabel   = el('morning-bar-label');
+  var morningBarProgress = el('morning-bar-progress');
+  var morningBarToggle  = el('morning-bar-toggle');
+  var morningBody       = el('morning-body');
+  var morningList       = el('morning-list');
 
   // ── Select mode ────────────────────────────────────────────────────────────
 
@@ -209,9 +220,17 @@
     onlineLabel.textContent = on ? 'Online' : 'Offline';
   }
 
-  window.addEventListener('online',  updateOnline);
+  window.addEventListener('online', function () {
+    updateOnline();
+    // Push any changes that accumulated while offline
+    gistPush();
+  });
   window.addEventListener('offline', updateOnline);
-  syncBtn.addEventListener('click',  updateOnline);
+  syncBtn.addEventListener('click', function () {
+    updateOnline();
+    gistPush();
+    folderSync();
+  });
   updateOnline();
 
   // ── Date navigation ────────────────────────────────────────────────────────
@@ -221,8 +240,15 @@
     dateLabelEl.textContent = formatDateLabel(currentDate);
     var today  = todayKey();
     var isPast = keyToDate(currentDate) < keyToDate(today);
-    carryBtn.classList.toggle('hidden', !isPast || currentDate === today);
     todayBtnEl.style.fontWeight = (currentDate === today) ? '800' : '600';
+    if (!isPast || currentDate === today) {
+      hide(carryBtn);
+    } else {
+      DB.getTodosByDate(currentDate).then(function (todos) {
+        var hasIncomplete = todos.some(function (t) { return !t.completed; });
+        carryBtn.classList.toggle('hidden', !hasIncomplete);
+      });
+    }
   }
 
   prevBtn.addEventListener('click', function () {
@@ -320,11 +346,62 @@
 
   // ── Settings drawer ────────────────────────────────────────────────────────
 
+  function renderMorningTemplate() {
+    var list = el('mp-template-list');
+    list.innerHTML = '';
+    getMorningTemplate().forEach(function (text) {
+      var li   = document.createElement('li');
+      li.className = 'mp-template-item';
+
+      var span = document.createElement('span');
+      span.className   = 'mp-template-item-text';
+      span.textContent = text;
+
+      var del = document.createElement('button');
+      del.className   = 'mp-template-remove';
+      del.type        = 'button';
+      del.title       = 'Remove';
+      del.textContent = '✕';
+      del.addEventListener('click', function () {
+        var items = getMorningTemplate().filter(function (t) { return t !== text; });
+        settings.morningTemplate = items.join('\n');
+        DB.setSetting('morningTemplate', settings.morningTemplate);
+        renderMorningTemplate();
+        renderMorning();
+      });
+
+      li.appendChild(span);
+      li.appendChild(del);
+      list.appendChild(li);
+    });
+  }
+
+  el('mp-template-add-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var input = el('mp-template-new');
+    var text  = input.value.trim();
+    if (!text) return;
+    var items = getMorningTemplate();
+    if (items.indexOf(text) === -1) {
+      items.push(text);
+      settings.morningTemplate = items.join('\n');
+      DB.setSetting('morningTemplate', settings.morningTemplate);
+      renderMorningTemplate();
+      renderMorning();
+    }
+    input.value = '';
+    input.focus();
+  });
+
   function openSettings() {
     el('set-name-left').value  = settings.nameLeft  || '';
     el('set-name-right').value = settings.nameRight || '';
     el('set-split-time').value = settings.splitTime || '12:00';
     el('set-theme').value      = settings.theme     || 'system';
+    el('set-gist-token').value = settings.gistToken || '';
+    el('set-gist-id').value    = settings.gistId    || '';
+    renderMorningTemplate();
+    updateSyncUI();
     updateSplitPreview();
     show(settingsOvl);
     show(settingsDrw);
@@ -340,26 +417,38 @@
     el('split-preview').textContent = to12h(val);
   }
 
-  el('set-split-time').addEventListener('input', updateSplitPreview);
+  function saveSetting(key, value) {
+    settings[key] = value;
+    DB.setSetting(key, value);
+  }
+
+  el('set-name-left').addEventListener('change', function () {
+    saveSetting('nameLeft', this.value.trim() || 'Panel 1');
+    applySettings();
+  });
+  el('set-name-right').addEventListener('change', function () {
+    saveSetting('nameRight', this.value.trim() || 'Panel 2');
+    applySettings();
+  });
+  el('set-split-time').addEventListener('input', function () {
+    updateSplitPreview();
+    saveSetting('splitTime', this.value || '12:00');
+    applySettings();
+  });
+  el('set-theme').addEventListener('change', function () {
+    saveSetting('theme', this.value);
+    applySettings();
+  });
+  el('set-gist-token').addEventListener('change', function () {
+    saveSetting('gistToken', this.value.trim());
+  });
+  el('set-gist-id').addEventListener('change', function () {
+    saveSetting('gistId', this.value.trim());
+  });
 
   settingsBtn.addEventListener('click', openSettings);
   closeSettings.addEventListener('click', closeSettingsFn);
   settingsOvl.addEventListener('click', closeSettingsFn);
-
-  saveSettings.addEventListener('click', function () {
-    settings.nameLeft    = el('set-name-left').value.trim()  || 'Panel 1';
-    settings.nameRight   = el('set-name-right').value.trim() || 'Panel 2';
-    settings.splitTime   = el('set-split-time').value || '12:00';
-    settings.theme       = el('set-theme').value;
-
-    DB.setSetting('nameLeft',  settings.nameLeft);
-    DB.setSetting('nameRight', settings.nameRight);
-    DB.setSetting('splitTime', settings.splitTime);
-    DB.setSetting('theme',     settings.theme);
-
-    applySettings();
-    closeSettingsFn();
-  });
 
   function applySettings() {
     var ln = settings.nameLeft  || 'Panel 1';
@@ -405,7 +494,11 @@
       });
 
       updateSelectToolbar();
+      updatePanelTimestamps(todos);
       checkPendingCarry();
+      updateDateUI();
+      autoSync();
+      gistPush();
     });
   }
 
@@ -489,9 +582,39 @@
       updateSelectToolbar();
     });
 
-    // Edit
+    // Inline text edit on single click
+    textEl.addEventListener('click', function (e) {
+      if (selectMode) return;
+      e.stopPropagation();
+      var input = document.createElement('input');
+      input.type      = 'text';
+      input.value     = todo.text;
+      input.className = 'inline-edit-input';
+      textEl.replaceWith(input);
+      input.focus();
+      input.select();
+
+      function commit() {
+        var val = input.value.trim();
+        if (val && val !== todo.text) {
+          snapshotForUndo().then(function () {
+            todo.text      = val;
+            todo.updatedAt = Date.now();
+            return DB.putTodo(todo);
+          }).then(render);
+        } else {
+          input.replaceWith(textEl);
+        }
+      }
+      input.addEventListener('blur', commit);
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { input.removeEventListener('blur', commit); input.replaceWith(textEl); }
+      });
+    });
+
+    // Edit modal on edit button only
     editBtn.addEventListener('click', function () { openModal(todo); });
-    textEl.addEventListener('dblclick', function () { openModal(todo); });
 
     // Delete (soft)
     delBtn.addEventListener('click', function () {
@@ -1004,6 +1127,272 @@
     hide(carryBanner);
   });
 
+  // ── Toast ──────────────────────────────────────────────────────────────────
+
+  var toastTimer = null;
+  function showToast(msg, duration) {
+    var t = el('toast');
+    t.textContent = msg;
+    t.classList.remove('hidden');
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      t.classList.remove('show');
+      setTimeout(function () { t.classList.add('hidden'); }, 220);
+    }, duration || 3000);
+  }
+
+  // ── Midnight auto-switch ───────────────────────────────────────────────────
+
+  function scheduleMidnight() {
+    var now  = new Date();
+    var next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+    var ms   = next - now;
+    setTimeout(function () {
+      currentDate = todayKey();
+      updateDateUI();
+      render();
+      showToast('New day — switched to Today');
+      scheduleMidnight();
+    }, ms);
+  }
+
+  // ── Panel last-edited timestamps ───────────────────────────────────────────
+
+  function updatePanelTimestamps(todos) {
+    ['left', 'right'].forEach(function (side) {
+      var el2   = el('edited-' + side);
+      var items = todos.filter(function (t) { return t.panel === side; });
+      if (!items.length) { el2.textContent = ''; return; }
+      var latest = items.reduce(function (max, t) {
+        return (t.updatedAt || 0) > (max.updatedAt || 0) ? t : max;
+      }, items[0]);
+      if (!latest.updatedAt) { el2.textContent = ''; return; }
+      var d   = new Date(latest.updatedAt);
+      var now = new Date();
+      var sameDay = d.toDateString() === now.toDateString();
+      var time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      el2.textContent = sameDay
+        ? 'edited ' + time
+        : 'edited ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + time;
+    });
+  }
+
+  // ── Local folder sync (every 5 min if dirty) ──────────────────────────────
+
+  function updateSyncUI() {
+    var hint      = el('sync-folder-hint');
+    var linkBtn   = el('sync-folder-btn');
+    var unlinkBtn = el('sync-folder-unlink');
+    if (syncDirHandle) {
+      hint.textContent    = 'Linked: ' + syncDirHandle.name + ' — writes focusapp-data.json every 5 min when changed.';
+      linkBtn.textContent = 'Re-link folder…';
+      show(unlinkBtn);
+    } else {
+      hint.textContent    = 'Not linked. Writes focusapp-data.json every 5 min when data changes.';
+      linkBtn.textContent = 'Link folder…';
+      hide(unlinkBtn);
+    }
+  }
+
+  function autoSync() {
+    syncDirty = true; // folder sync picks this up on next 5-min tick
+  }
+
+  function folderSync() {
+    if (!syncDirHandle || !syncDirty) return;
+    DB.getAllTodos().then(function (all) {
+      var json = JSON.stringify(all, null, 2);
+      if (json === lastSyncedJson) { syncDirty = false; return; }
+      syncDirHandle.getFileHandle('focusapp-data.json', { create: true })
+        .then(function (fh) { return fh.createWritable(); })
+        .then(function (writable) {
+          return writable.write(json).then(function () { return writable.close(); });
+        })
+        .then(function () {
+          lastSyncedJson = json;
+          syncDirty = false;
+        })
+        .catch(function (err) { console.warn('Folder sync failed:', err); });
+    });
+  }
+
+  // Run folder sync every 5 minutes
+  setInterval(folderSync, 5 * 60 * 1000);
+
+  el('sync-folder-btn').addEventListener('click', function () {
+    if (!window.showDirectoryPicker) {
+      showToast('Directory picker not supported in this browser');
+      return;
+    }
+    window.showDirectoryPicker({ mode: 'readwrite' })
+      .then(function (handle) {
+        syncDirHandle = handle;
+        syncDirty = true;
+        updateSyncUI();
+        folderSync();
+      })
+      .catch(function () { /* user cancelled */ });
+  });
+
+  el('sync-folder-unlink').addEventListener('click', function () {
+    syncDirHandle = null;
+    syncDirty     = false;
+    updateSyncUI();
+  });
+
+  // ── GitHub Gist sync ───────────────────────────────────────────────────────
+
+  function gistPush() {
+    var token = settings.gistToken;
+    var gistId = settings.gistId;
+    if (!token || !gistId) return;
+    DB.getAllTodos().then(function (all) {
+      var body = JSON.stringify({
+        files: { 'focusapp-data.json': { content: JSON.stringify(all, null, 2) } }
+      });
+      fetch('https://api.github.com/gists/' + gistId, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': 'token ' + token,
+          'Content-Type': 'application/json'
+        },
+        body: body
+      }).then(function (r) {
+        var statusEl = el('gist-status');
+        if (!statusEl) return;
+        if (r.ok) {
+          statusEl.textContent = 'Saved ✓';
+          statusEl.className = 'gist-status ok';
+          clearTimeout(statusEl._t);
+          statusEl._t = setTimeout(function () { statusEl.textContent = ''; statusEl.className = 'gist-status'; }, 3000);
+        } else {
+          statusEl.textContent = 'Sync error ' + r.status;
+          statusEl.className = 'gist-status err';
+        }
+      }).catch(function () {
+        var statusEl = el('gist-status');
+        if (statusEl) { statusEl.textContent = 'Offline'; statusEl.className = 'gist-status err'; }
+      });
+    });
+  }
+
+  function gistRestore() {
+    var token = settings.gistToken;
+    var gistId = settings.gistId;
+    if (!token || !gistId) { showToast('Enter a token and Gist ID first'); return; }
+    fetch('https://api.github.com/gists/' + gistId, {
+      headers: { 'Authorization': 'token ' + token }
+    }).then(function (r) {
+      if (!r.ok) throw new Error('Status ' + r.status);
+      return r.json();
+    }).then(function (data) {
+      var file = data.files && data.files['focusapp-data.json'];
+      if (!file) throw new Error('focusapp-data.json not found in Gist');
+      var items = JSON.parse(file.content);
+      if (!Array.isArray(items)) throw new Error('Expected JSON array');
+      var ops = items
+        .filter(function (item) { return item.id && item.text; })
+        .map(function (item) { return DB.putTodo(item); });
+      return Promise.all(ops);
+    }).then(function () {
+      render();
+      showToast('Restored from Gist');
+    }).catch(function (err) {
+      showToast('Restore failed: ' + err.message, 5000);
+    });
+  }
+
+  el('gist-restore-btn').addEventListener('click', gistRestore);
+
+  // ── Morning Process ────────────────────────────────────────────────────────
+
+  function getMorningTemplate() {
+    var raw = (settings.morningTemplate || '').trim();
+    if (!raw) return [];
+    return raw.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+
+  function setMorningExpanded(expanded) {
+    morningExpanded = expanded;
+    morningBanner.classList.toggle('expanded', expanded);
+    morningBody.classList.toggle('hidden', !expanded);
+  }
+
+  morningBar.addEventListener('click', function () {
+    setMorningExpanded(!morningExpanded);
+  });
+
+  function renderMorning() {
+    var today = todayKey();
+    var template = getMorningTemplate();
+
+    if (!template.length) {
+      morningBanner.classList.add('hidden');
+      return;
+    }
+    morningBanner.classList.remove('hidden');
+
+    DB.getMorningDay(today).then(function (record) {
+      if (!record) {
+        record = {
+          dateKey: today,
+          items: template.map(function (text) { return { text: text, done: false }; }),
+        };
+        DB.putMorningDay(record);
+      } else {
+        // Sync template additions/removals into today's record
+        var existingTexts = record.items.map(function (i) { return i.text; });
+        template.forEach(function (text) {
+          if (existingTexts.indexOf(text) === -1) {
+            record.items.push({ text: text, done: false });
+          }
+        });
+        record.items = record.items.filter(function (i) {
+          return template.indexOf(i.text) !== -1;
+        });
+        // Re-order to match template order
+        record.items.sort(function (a, b) {
+          return template.indexOf(a.text) - template.indexOf(b.text);
+        });
+      }
+
+      var total = record.items.length;
+      var done  = record.items.filter(function (i) { return i.done; }).length;
+      var complete = done === total && total > 0;
+
+      morningBanner.classList.toggle('complete', complete);
+      morningBarProgress.textContent = done + ' / ' + total;
+
+      morningList.innerHTML = '';
+      record.items.forEach(function (item, idx) {
+        var li  = document.createElement('li');
+        li.className = 'morning-item' + (item.done ? ' done' : '');
+
+        var chk = document.createElement('input');
+        chk.type    = 'checkbox';
+        chk.checked = item.done;
+        chk.addEventListener('change', function () {
+          record.items[idx].done = chk.checked;
+          DB.putMorningDay(record).then(function () {
+            var allDone = record.items.every(function (i) { return i.done; });
+            if (allDone) setMorningExpanded(false);
+            renderMorning();
+          });
+        });
+
+        var span = document.createElement('span');
+        span.className   = 'morning-item-text';
+        span.textContent = item.text;
+        span.addEventListener('click', function () { chk.click(); });
+
+        li.appendChild(chk);
+        li.appendChild(span);
+        morningList.appendChild(li);
+      });
+    });
+  }
+
   // ── Init ───────────────────────────────────────────────────────────────────
 
   DB.open().then(function () {
@@ -1017,6 +1406,8 @@
 
     applySettings();
     updateDateUI();
+    renderMorning();
+    scheduleMidnight();
     return render();
   }).then(function () {
     refreshUndoButtons();

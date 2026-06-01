@@ -66,12 +66,25 @@
     <button class="carry-banner-dismiss" id="carry-banner-dismiss">✕</button>
   </div>
 
+  <!-- MORNING PROCESS BANNER -->
+  <div class="morning-banner" id="morning-banner">
+    <div class="morning-bar" id="morning-bar">
+      <span class="morning-bar-label" id="morning-bar-label">Morning Process</span>
+      <span class="morning-bar-progress" id="morning-bar-progress"></span>
+      <button class="morning-bar-toggle icon-btn" id="morning-bar-toggle" title="Expand / collapse">▾</button>
+    </div>
+    <div class="morning-body hidden" id="morning-body">
+      <ul class="morning-list" id="morning-list"></ul>
+    </div>
+  </div>
+
   <!-- PANELS -->
   <main class="panels" id="panels">
     <section class="panel" id="panel-left" data-panel="left">
       <div class="panel-banner" id="banner-left"></div>
       <div class="panel-header">
         <h2 class="panel-title" id="title-left">Panel 1</h2>
+        <span class="panel-edited" id="edited-left"></span>
       </div>
       <form class="add-form" id="form-left">
         <input class="add-input" name="text" placeholder="Quick add…" autocomplete="off" required />
@@ -90,6 +103,7 @@
       <div class="panel-banner" id="banner-right"></div>
       <div class="panel-header">
         <h2 class="panel-title" id="title-right">Panel 2</h2>
+        <span class="panel-edited" id="edited-right"></span>
       </div>
       <form class="add-form" id="form-right">
         <input class="add-input" name="text" placeholder="Quick add…" autocomplete="off" required />
@@ -140,6 +154,36 @@
     </div>
     <hr class="divider" />
     <div class="setting-group">
+      <label class="setting-label">Morning Process template</label>
+      <p class="setting-hint">Build your daily checklist. Resets fresh each day.</p>
+      <ul class="mp-template-list" id="mp-template-list"></ul>
+      <form class="mp-template-add-form" id="mp-template-add-form">
+        <input class="setting-input mp-template-input" id="mp-template-new" type="text" placeholder="Add item…" autocomplete="off" />
+        <button class="setting-btn" type="submit">＋ Add</button>
+      </form>
+    </div>
+    <hr class="divider" />
+    <div class="setting-group">
+      <label class="setting-label">Local folder sync</label>
+      <p class="setting-hint" id="sync-folder-hint">Not linked. Writes focusapp-data.json every 5 min when data changes.</p>
+      <div class="sync-file-row">
+        <button class="setting-btn" id="sync-folder-btn">Link folder…</button>
+        <button class="setting-btn danger-btn hidden" id="sync-folder-unlink">Unlink</button>
+      </div>
+    </div>
+    <hr class="divider" />
+    <div class="setting-group">
+      <label class="setting-label">GitHub Gist sync</label>
+      <p class="setting-hint">Auto-saves all data to a private GitHub Gist on every change.</p>
+      <input class="setting-input" id="set-gist-token" type="password" placeholder="Personal access token (gist scope)" autocomplete="off" />
+      <input class="setting-input" id="set-gist-id" type="text" placeholder="Gist ID" autocomplete="off" style="margin-top:6px;" />
+      <div class="sync-file-row" style="margin-top:6px;">
+        <button class="setting-btn" id="gist-restore-btn">Restore from Gist</button>
+        <span class="gist-status" id="gist-status"></span>
+      </div>
+    </div>
+    <hr class="divider" />
+    <div class="setting-group">
       <label class="setting-label">Export all data</label>
       <button class="setting-btn" id="export-all-btn">Export JSON</button>
     </div>
@@ -147,9 +191,6 @@
       <label class="setting-label">Import data</label>
       <input type="file" id="import-file" accept=".json" class="hidden" />
       <button class="setting-btn" id="import-btn">Import JSON</button>
-    </div>
-    <div class="drawer-footer">
-      <button class="setting-btn primary" id="save-settings-btn">Save Settings</button>
     </div>
   </aside>
 
@@ -238,6 +279,9 @@
       <button class="del-btn icon-btn archive-icon" title="Archive">📦</button>
     </li>
   </template>
+
+  <!-- TOAST -->
+  <div class="toast hidden" id="toast"></div>
 
   <script src="src/db.js"></script>
   <script src="src/app.js"></script>

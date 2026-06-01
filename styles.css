@@ -748,6 +748,209 @@ details[open] .done-toggle::before { transform: rotate(90deg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--mw-cadet); }
 
+/* ── Morning Process banner ──────────────────────────────────────────────── */
+.morning-banner {
+  margin: 0 16px 8px;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+}
+
+.morning-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 36px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--morning-bar-bg, #c0392b);
+  color: #fff;
+  transition: background .2s;
+}
+.morning-bar:hover { filter: brightness(1.08); }
+
+.morning-banner.complete .morning-bar {
+  --morning-bar-bg: #274D77;
+}
+
+.morning-bar-label {
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+
+.morning-bar-progress {
+  font-size: .78rem;
+  opacity: .85;
+  margin-left: 4px;
+}
+
+.morning-bar-toggle {
+  margin-left: auto;
+  color: #fff;
+  font-size: .9rem;
+  line-height: 1;
+  transition: transform .18s;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+}
+.morning-banner.expanded .morning-bar-toggle {
+  transform: rotate(180deg);
+}
+
+.morning-body {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  padding: 8px 12px 10px;
+}
+
+.morning-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.morning-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-radius: var(--r-sm);
+  font-size: .9rem;
+}
+.morning-item:hover { background: var(--bg-hover); }
+
+.morning-item input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.morning-item-text {
+  flex: 1;
+  cursor: pointer;
+}
+.morning-item.done .morning-item-text {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.mp-template-list {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mp-template-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: var(--r-sm);
+  font-size: .88rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+}
+
+.mp-template-item-text {
+  flex: 1;
+  color: var(--text);
+}
+
+.mp-template-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: .85rem;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.mp-template-remove:hover { color: #c0392b; }
+
+.mp-template-add-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.mp-template-add-form .setting-input {
+  flex: 1;
+}
+
+.sync-file-row { display: flex; gap: 8px; margin-top: 6px; }
+
+/* ── Inline text edit ────────────────────────────────────────────────────── */
+.inline-edit-input {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 5px;
+  border: 1px solid var(--border-focus);
+  border-radius: var(--r-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: inherit;
+  font-family: inherit;
+  outline: none;
+}
+
+/* ── Panel edited timestamp ──────────────────────────────────────────────── */
+.panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.panel-edited {
+  font-size: .72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Gist status ─────────────────────────────────────────────────────────── */
+.gist-status {
+  font-size: .78rem;
+  color: var(--text-muted);
+  align-self: center;
+}
+.gist-status.ok  { color: #27ae60; }
+.gist-status.err { color: #c0392b; }
+
+/* ── Toast notification ──────────────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--mw-metallic);
+  color: #fff;
+  padding: 9px 20px;
+  border-radius: 20px;
+  font-size: .88rem;
+  font-weight: 500;
+  box-shadow: var(--shadow-md);
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.toast.show { opacity: 1; }
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 680px) {
   .panels { flex-direction: column; }

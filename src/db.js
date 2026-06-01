@@ -4,7 +4,7 @@
   'use strict';
 
   const NAME = 'focusapp_v2';
-  const VER  = 1;
+  const VER  = 2;
   let _db = null;
 
   function open() {
@@ -27,6 +27,10 @@
 
         if (!db.objectStoreNames.contains('trash')) {
           db.createObjectStore('trash', { keyPath: 'id' });
+        }
+
+        if (!db.objectStoreNames.contains('morning')) {
+          db.createObjectStore('morning', { keyPath: 'dateKey' });
         }
       };
 
@@ -141,6 +145,21 @@
   function deleteFromTrash(id)  { return remove('trash', id); }
   function clearTrash()         { return clear('trash'); }
 
+  // ── Morning ────────────────────────────────────────────────────────────────
+
+  function getMorningDay(dateKey) {
+    return open().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var t   = db.transaction('morning', 'readonly');
+        var req = t.objectStore('morning').get(dateKey);
+        req.onsuccess = function () { resolve(req.result || null); };
+        req.onerror   = function () { reject(req.error); };
+      });
+    });
+  }
+
+  function putMorningDay(record) { return put('morning', record); }
+
   // ── Export ─────────────────────────────────────────────────────────────────
 
   window.DB = {
@@ -151,5 +170,7 @@
     getSetting, setSetting, getAllSettings,
     // trash
     addToTrash, getAllTrash, deleteFromTrash, clearTrash,
+    // morning
+    getMorningDay, putMorningDay,
   };
 }());
