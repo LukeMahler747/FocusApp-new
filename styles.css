@@ -894,6 +894,13 @@ details[open] .done-toggle::before { transform: rotate(90deg); }
 
 .sync-file-row { display: flex; gap: 8px; margin-top: 6px; }
 
+.archive-svg {
+  width: 1.1em;
+  height: 1.1em;
+  vertical-align: middle;
+  display: inline-block;
+}
+
 /* ── Inline text edit ────────────────────────────────────────────────────── */
 .inline-edit-input {
   flex: 1;
