@@ -4,7 +4,7 @@
   'use strict';
 
   const NAME = 'focusapp_v2';
-  const VER  = 2;
+  const VER  = 3;
   let _db = null;
 
   function open() {
@@ -31,6 +31,10 @@
 
         if (!db.objectStoreNames.contains('morning')) {
           db.createObjectStore('morning', { keyPath: 'dateKey' });
+        }
+
+        if (!db.objectStoreNames.contains('checklistDays')) {
+          db.createObjectStore('checklistDays', { keyPath: 'stateKey' });
         }
       };
 
