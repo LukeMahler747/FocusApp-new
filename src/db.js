@@ -4,7 +4,7 @@
   'use strict';
 
   const NAME = 'focusapp_v2';
-  const VER  = 3;
+  const VER  = 2;
   let _db = null;
 
   function open() {
@@ -31,10 +31,6 @@
 
         if (!db.objectStoreNames.contains('morning')) {
           db.createObjectStore('morning', { keyPath: 'dateKey' });
-        }
-
-        if (!db.objectStoreNames.contains('checklistDays')) {
-          db.createObjectStore('checklistDays', { keyPath: 'stateKey' });
         }
       };
 
@@ -164,24 +160,6 @@
 
   function putMorningDay(record) { return put('morning', record); }
 
-  // ── Checklist day state ────────────────────────────────────────────────────
-  // stateKey = listId + '_' + dateKey
-
-  function getChecklistDay(stateKey) {
-    return open().then(function (db) {
-      return new Promise(function (resolve, reject) {
-        var t   = db.transaction('checklistDays', 'readonly');
-        var req = t.objectStore('checklistDays').get(stateKey);
-        req.onsuccess = function () { resolve(req.result || null); };
-        req.onerror   = function () { reject(req.error); };
-      });
-    });
-  }
-
-  function putChecklistDay(record)    { return put('checklistDays', record); }
-
-  function getAllChecklistDays() { return getAll('checklistDays'); }
-
   // ── Export ─────────────────────────────────────────────────────────────────
 
   window.DB = {
@@ -194,7 +172,5 @@
     addToTrash, getAllTrash, deleteFromTrash, clearTrash,
     // morning
     getMorningDay, putMorningDay,
-    // checklist days
-    getChecklistDay, putChecklistDay, getAllChecklistDays,
   };
 }());
