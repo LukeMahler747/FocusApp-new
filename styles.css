@@ -328,7 +328,7 @@ body {
   transition: background .2s;
 }
 .panel-banner:not(:empty) {
-  background: var(--mw-metallic);
+  background: #3a7bd5;
 }
 
 .panel-header {
@@ -750,7 +750,7 @@ details[open] .done-toggle::before { transform: rotate(90deg); }
 
 /* ── Morning Process banner ──────────────────────────────────────────────── */
 .morning-banner {
-  margin: 0 16px 8px;
+  margin: 8px 16px 8px;
   border-radius: var(--r-md);
   overflow: hidden;
   box-shadow: var(--shadow-sm);

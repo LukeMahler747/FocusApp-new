@@ -30,7 +30,27 @@
 - [x] Local folder sync — picks a folder, writes focusapp-data.json every 5 min when data changes
 - [x] Archive button updated to box/archive SVG icon
 - [x] Export and Gist sync include panel names and all settings
+- [x] Checklist banners — even padding above and below, consistent gap between multiple banners
 
 ## To Do
 
+- [x] Change "Now Focusing" banner blue to a lighter shade so it stands out more
+- [ ] Checklist Schedules — replace the hardcoded Morning Process with a general-purpose scheduled checklist system
+  - In Settings, user can create multiple named checklists (e.g. "Morning Process", "Monthly Reconcile", "Bi-Weekly Brain Dump Audit")
+  - Each checklist has its own item editor — opened via an inline dialog (no native alert/confirm, works with pop-up blockers)
+  - Each checklist has a configurable schedule with rich recurrence options:
+    - Daily
+    - Weekdays only / Weekends only
+    - Specific days of the week (e.g. every Monday & Wednesday)
+    - Weekly (every N weeks on a chosen day)
+    - Bi-weekly
+    - Monthly — by date (e.g. 1st, 15th), by weekday position (e.g. first Monday, last Friday), or first/last weekday of the month
+    - Quarterly / Yearly
+    - Custom interval (every N days)
+    - One-time (specific date)
+  - Each checklist has a persistence setting:
+    - Disappears at end of day whether checked or not (resets on next occurrence)
+    - Persists until fully checked off — stays visible on subsequent days; user can also manually pull it to the current day
+  - Banners for scheduled checklists appear below Morning Process — only shown if the checklist applies to the viewed day (by schedule or by carry-forward), hidden otherwise
+  - Checklist state (checked items, carry status) is saved per-day alongside todo data
 - [ ] (your next items here)
