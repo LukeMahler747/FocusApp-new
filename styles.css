@@ -894,6 +894,113 @@ details[open] .done-toggle::before { transform: rotate(90deg); }
 
 .sync-file-row { display: flex; gap: 8px; margin-top: 6px; }
 
+/* ── Scheduled Checklists settings list ──────────────────────────────────── */
+.cl-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cl-list-empty {
+  font-size: .82rem;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+.cl-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  font-size: .88rem;
+}
+.cl-list-name {
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cl-list-sched {
+  font-size: .75rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* ── Checklist editor modal ──────────────────────────────────────────────── */
+.cl-dow-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: .88rem;
+}
+.cl-dow-row label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text);
+}
+.cl-items-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cl-modal-item { cursor: default; }
+.cl-modal-item.dragging { opacity: .4; }
+.cl-modal-item.drag-over { border-top: 2px solid var(--border-focus); }
+.cl-item-handle { cursor: grab; flex-shrink: 0; }
+.cl-item-handle:active { cursor: grabbing; }
+.cl-item-edit-input {
+  flex: 1;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: .88rem;
+  font-family: inherit;
+  outline: none;
+  min-width: 0;
+}
+.cl-item-edit-input:hover { border-color: var(--border); }
+.cl-item-edit-input:focus { border-color: var(--border-focus); background: var(--bg-input); }
+.cl-banner { margin-top: 0; }
+.cl-banner-sched {
+  font-size: .72rem;
+  opacity: .7;
+  font-weight: 400;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+
+.cl-banner-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 4px 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+}
+.cl-complete-btn {
+  font-size: .78rem;
+  padding: 4px 12px;
+  color: #27ae60 !important;
+  border-color: #27ae60 !important;
+}
+.cl-complete-btn:hover { background: #f0fff4 !important; }
+
 .archive-svg {
   width: 1.1em;
   height: 1.1em;

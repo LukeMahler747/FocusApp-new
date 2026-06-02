@@ -74,7 +74,6 @@
   var redoStack         = [];
   var selectMode        = false;
   var doneOpen          = { left: true, right: true };
-  var morningExpanded   = false;
   var syncDirHandle     = null;   // FileSystemDirectoryHandle for folder sync
   var syncDirty         = false;  // true when data changed since last folder write
   var lastSyncedJson    = null;   // last JSON written, to detect changes
@@ -129,13 +128,6 @@
   var carryBannerBtn    = el('carry-banner-btn');
   var carryBannerDismiss = el('carry-banner-dismiss');
 
-  var morningBanner     = el('morning-banner');
-  var morningBar        = el('morning-bar');
-  var morningBarLabel   = el('morning-bar-label');
-  var morningBarProgress = el('morning-bar-progress');
-  var morningBarToggle  = el('morning-bar-toggle');
-  var morningBody       = el('morning-body');
-  var morningList       = el('morning-list');
 
   // ── Select mode ────────────────────────────────────────────────────────────
 
@@ -346,53 +338,6 @@
 
   // ── Settings drawer ────────────────────────────────────────────────────────
 
-  function renderMorningTemplate() {
-    var list = el('mp-template-list');
-    list.innerHTML = '';
-    getMorningTemplate().forEach(function (text) {
-      var li   = document.createElement('li');
-      li.className = 'mp-template-item';
-
-      var span = document.createElement('span');
-      span.className   = 'mp-template-item-text';
-      span.textContent = text;
-
-      var del = document.createElement('button');
-      del.className   = 'mp-template-remove';
-      del.type        = 'button';
-      del.title       = 'Remove';
-      del.textContent = '✕';
-      del.addEventListener('click', function () {
-        var items = getMorningTemplate().filter(function (t) { return t !== text; });
-        settings.morningTemplate = items.join('\n');
-        DB.setSetting('morningTemplate', settings.morningTemplate);
-        renderMorningTemplate();
-        renderMorning();
-      });
-
-      li.appendChild(span);
-      li.appendChild(del);
-      list.appendChild(li);
-    });
-  }
-
-  el('mp-template-add-form').addEventListener('submit', function (e) {
-    e.preventDefault();
-    var input = el('mp-template-new');
-    var text  = input.value.trim();
-    if (!text) return;
-    var items = getMorningTemplate();
-    if (items.indexOf(text) === -1) {
-      items.push(text);
-      settings.morningTemplate = items.join('\n');
-      DB.setSetting('morningTemplate', settings.morningTemplate);
-      renderMorningTemplate();
-      renderMorning();
-    }
-    input.value = '';
-    input.focus();
-  });
-
   function openSettings() {
     el('set-name-left').value  = settings.nameLeft  || '';
     el('set-name-right').value = settings.nameRight || '';
@@ -400,7 +345,7 @@
     el('set-theme').value      = settings.theme     || 'system';
     el('set-gist-token').value = settings.gistToken || '';
     el('set-gist-id').value    = settings.gistId    || '';
-    renderMorningTemplate();
+    renderClList();
     updateSyncUI();
     updateSplitPreview();
     show(settingsOvl);
@@ -497,6 +442,7 @@
       updatePanelTimestamps(todos);
       checkPendingCarry();
       updateDateUI();
+      renderChecklists();
       autoSync();
       gistPush();
     });
@@ -1340,93 +1286,569 @@
 
   el('gist-restore-btn').addEventListener('click', gistRestore);
 
-  // ── Morning Process ────────────────────────────────────────────────────────
+  // ── Scheduled Checklists ──────────────────────────────────────────────────
 
-  function getMorningTemplate() {
-    var raw = (settings.morningTemplate || '').trim();
-    if (!raw) return [];
-    return raw.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+  function getChecklists() {
+    try { return JSON.parse(settings.checklists || '[]'); } catch (e) { return []; }
   }
 
-  function setMorningExpanded(expanded) {
-    morningExpanded = expanded;
-    morningBanner.classList.toggle('expanded', expanded);
-    morningBody.classList.toggle('hidden', !expanded);
+  function saveChecklists(arr) {
+    settings.checklists = JSON.stringify(arr);
+    DB.setSetting('checklists', settings.checklists);
   }
 
-  morningBar.addEventListener('click', function () {
-    setMorningExpanded(!morningExpanded);
-  });
+  // Returns true if checklist `cl` should appear on the day given by `dateKey`
+  function clAppliesToDay(cl, dateKey) {
+    var d   = keyToDate(dateKey);
+    var dow = d.getDay(); // 0=Sun,6=Sat
+    var dom = d.getDate();
+    var mon = d.getMonth(); // 0-indexed
+    var s   = cl.schedule;
 
-  function renderMorning() {
-    var today = todayKey();
-    var template = getMorningTemplate();
+    switch (s.type) {
+      case 'daily':
+        return true;
+      case 'weekdays':
+        return dow >= 1 && dow <= 5;
+      case 'weekends':
+        return dow === 0 || dow === 6;
+      case 'days-of-week':
+        return (s.days || []).indexOf(dow) !== -1;
+      case 'weekly': {
+        if (dow !== +s.day) return false;
+        if (!s.start) return true;
+        var diff = Math.round((d - keyToDate(s.start)) / 86400000);
+        return diff >= 0 && diff % (7 * (+s.n || 1)) === 0;
+      }
+      case 'biweekly': {
+        if (!s.start) return false;
+        var diff2 = Math.round((d - keyToDate(s.start)) / 86400000);
+        return diff2 >= 0 && diff2 % 14 === 0;
+      }
+      case 'nth-weekday': {
+        var n = +s.n;
+        var targetDow = +s.day;
+        if (dow !== targetDow) return false;
+        if (n === -1) {
+          // last occurrence — check if adding 7 days overflows the month
+          var next = new Date(d); next.setDate(dom + 7);
+          return next.getMonth() !== mon;
+        }
+        // nth occurrence: count how many of this weekday have occurred including today
+        var count = Math.floor((dom - 1) / 7) + 1;
+        return count === n;
+      }
+      case 'nth-weekend-day': {
+        var nWe  = +s.n;
+        var tDow = +s.day; // 0=Sun or 6=Sat
+        if (dow !== tDow) return false;
+        // count occurrences of this weekend day in the month up to today
+        var cnt = 0;
+        for (var dd = 1; dd <= dom; dd++) {
+          var tmp = new Date(d.getFullYear(), mon, dd);
+          if (tmp.getDay() === tDow) cnt++;
+        }
+        return cnt === nWe;
+      }
+      case 'monthly-date':
+        return dom === +s.date;
+      case 'first-last-weekday': {
+        if (dow === 0 || dow === 6) return false; // not a weekday
+        if (s.which === 'first') {
+          // first weekday: check no earlier weekday this month
+          for (var d2 = 1; d2 < dom; d2++) {
+            var t2 = new Date(d.getFullYear(), mon, d2);
+            if (t2.getDay() !== 0 && t2.getDay() !== 6) return false;
+          }
+          return true;
+        } else {
+          // last weekday: check no later weekday this month
+          var daysInMonth = new Date(d.getFullYear(), mon + 1, 0).getDate();
+          for (var d3 = dom + 1; d3 <= daysInMonth; d3++) {
+            var t3 = new Date(d.getFullYear(), mon, d3);
+            if (t3.getDay() !== 0 && t3.getDay() !== 6) return false;
+          }
+          return true;
+        }
+      }
+      case 'quarterly': {
+        // 1st day of Jan, Apr, Jul, Oct
+        return dom === 1 && (mon === 0 || mon === 3 || mon === 6 || mon === 9);
+      }
+      case 'yearly':
+        if (!s.date) return false;
+        var parts = s.date.split('-');
+        return +parts[0] - 1 === mon && +parts[1] === dom;
+      case 'every-n-days': {
+        if (!s.start) return false;
+        var diffN = Math.round((d - keyToDate(s.start)) / 86400000);
+        return diffN >= 0 && diffN % (+s.n || 1) === 0;
+      }
+      case 'one-time':
+        return s.date === dateKey;
+      default:
+        return false;
+    }
+  }
 
-    if (!template.length) {
-      morningBanner.classList.add('hidden');
+  // ── Checklist settings list ────────────────────────────────────────────────
+
+  function renderClList() {
+    var list = el('cl-list');
+    list.innerHTML = '';
+    var cls = getChecklists();
+    if (!cls.length) {
+      var empty = document.createElement('li');
+      empty.className   = 'cl-list-empty';
+      empty.textContent = 'No checklists yet.';
+      list.appendChild(empty);
       return;
     }
-    morningBanner.classList.remove('hidden');
+    cls.forEach(function (cl) {
+      var li = document.createElement('li');
+      li.className = 'cl-list-item';
 
-    DB.getMorningDay(today).then(function (record) {
-      if (!record) {
-        record = {
-          dateKey: today,
-          items: template.map(function (text) { return { text: text, done: false }; }),
-        };
-        DB.putMorningDay(record);
-      } else {
-        // Sync template additions/removals into today's record
-        var existingTexts = record.items.map(function (i) { return i.text; });
-        template.forEach(function (text) {
-          if (existingTexts.indexOf(text) === -1) {
-            record.items.push({ text: text, done: false });
-          }
+      var nameSpan = document.createElement('span');
+      nameSpan.className   = 'cl-list-name';
+      nameSpan.textContent = cl.name;
+
+      var schedSpan = document.createElement('span');
+      schedSpan.className   = 'cl-list-sched';
+      schedSpan.textContent = clSchedLabel(cl.schedule);
+
+      var editBtn = document.createElement('button');
+      editBtn.className   = 'setting-btn';
+      editBtn.textContent = 'Edit';
+      editBtn.addEventListener('click', function () { openClModal(cl.id); });
+
+      li.appendChild(nameSpan);
+      li.appendChild(schedSpan);
+      li.appendChild(editBtn);
+      list.appendChild(li);
+    });
+  }
+
+  function clSchedLabel(s) {
+    var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    var ordinals = ['','1st','2nd','3rd','4th','Last'];
+    switch (s.type) {
+      case 'daily':             return 'Daily';
+      case 'weekdays':          return 'Weekdays';
+      case 'weekends':          return 'Weekends';
+      case 'days-of-week':      return (s.days||[]).map(function(d){return dayNames[d];}).join(', ');
+      case 'weekly':            return 'Every ' + (s.n||1) + 'w on ' + dayNames[s.day||1];
+      case 'biweekly':          return 'Bi-weekly';
+      case 'nth-weekday':       return (s.n===-1?'Last':ordinals[s.n]||s.n+'th') + ' ' + dayNames[s.day||1] + ' of month';
+      case 'nth-weekend-day':   return (ordinals[s.n]||s.n+'th') + ' ' + dayNames[s.day||6] + ' of month';
+      case 'monthly-date':      return 'Monthly on the ' + s.date + (s.date===1?'st':s.date===2?'nd':s.date===3?'rd':'th');
+      case 'first-last-weekday':return (s.which==='first'?'First':'Last') + ' weekday of month';
+      case 'quarterly':         return 'Quarterly';
+      case 'yearly':            return 'Yearly on ' + (s.date||'');
+      case 'every-n-days':      return 'Every ' + (s.n||1) + ' days';
+      case 'one-time':          return 'Once on ' + (s.date||'');
+      default:                  return s.type||'';
+    }
+  }
+
+  // ── Checklist editor modal ─────────────────────────────────────────────────
+  // All listeners attached lazily inside openClModal — never at script load time
+
+  var _clModalBound = false;
+  var _clEditingId  = null;
+  var _clModalItems = []; // working copy of items for current edit session
+
+  function openClModal(clId) {
+    var cls = getChecklists();
+    var cl  = clId ? cls.find(function (c) { return c.id === clId; }) : null;
+    _clEditingId  = clId || null;
+    _clModalItems = cl ? cl.items.slice() : [];
+
+    // Populate fields
+    el('cl-modal-title').textContent  = cl ? 'Edit Checklist' : 'New Checklist';
+    el('cl-name').value               = cl ? cl.name : '';
+
+    var s = cl ? cl.schedule : { type: 'daily' };
+    el('cl-sched-type').value = s.type || 'daily';
+
+    // Populate schedule-specific fields
+    el('cl-weekly-n').value        = s.n    || 1;
+    el('cl-weekly-day').value      = s.day  != null ? s.day : 1;
+    el('cl-biweekly-start').value  = s.start || '';
+    el('cl-nth-wd-n').value        = s.n    != null ? s.n : 1;
+    el('cl-nth-wd-day').value      = s.day  != null ? s.day : 1;
+    el('cl-nth-we-n').value        = s.n    != null ? s.n : 1;
+    el('cl-nth-we-day').value      = s.day  != null ? s.day : 6;
+    el('cl-monthly-date').value    = s.date || 1;
+    el('cl-flw-which').value       = s.which || 'first';
+    el('cl-yearly-date').value     = s.date || '';
+    el('cl-every-n').value         = s.n    || 7;
+    el('cl-every-n-start').value   = s.start || '';
+    el('cl-one-time-date').value   = s.date || '';
+
+    // Days-of-week checkboxes
+    var dowCbs = document.querySelectorAll('.cl-dow');
+    dowCbs.forEach(function (cb) {
+      cb.checked = (s.days || []).indexOf(+cb.value) !== -1;
+    });
+
+    clShowSchedOpts(s.type);
+    renderClModalItems();
+
+    // Show/hide delete button
+    if (_clEditingId) { show(el('cl-modal-delete')); }
+    else              { hide(el('cl-modal-delete')); }
+
+    show(el('cl-modal-overlay'));
+    show(el('cl-modal'));
+    el('cl-name').focus();
+
+    // Bind listeners only once
+    if (!_clModalBound) {
+      _clModalBound = true;
+
+      el('cl-sched-type').addEventListener('change', function () {
+        clShowSchedOpts(this.value);
+      });
+
+      el('cl-item-add-btn').addEventListener('click', function () {
+        var inp = el('cl-item-new');
+        var txt = inp.value.trim();
+        if (!txt) return;
+        _clModalItems.push({ text: txt, id: makeId() });
+        inp.value = '';
+        inp.focus();
+        renderClModalItems();
+      });
+
+      el('cl-item-new').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); el('cl-item-add-btn').click(); }
+      });
+
+      el('cl-modal-close').addEventListener('click',  closeClModal);
+      el('cl-modal-cancel').addEventListener('click', closeClModal);
+      el('cl-modal-overlay').addEventListener('click', closeClModal);
+
+      el('cl-modal-save').addEventListener('click', saveClModal);
+
+      el('cl-modal-delete').addEventListener('click', function () {
+        if (!_clEditingId) return;
+        var cls2 = getChecklists().filter(function (c) { return c.id !== _clEditingId; });
+        saveChecklists(cls2);
+        closeClModal();
+        renderClList();
+        renderChecklists();
+      });
+    }
+  }
+
+  function closeClModal() {
+    hide(el('cl-modal-overlay'));
+    hide(el('cl-modal'));
+    _clEditingId  = null;
+    _clModalItems = [];
+  }
+
+  function clShowSchedOpts(type) {
+    document.querySelectorAll('.cl-opt').forEach(function (el2) { el2.classList.add('hidden'); });
+    var map = {
+      'days-of-week':      'cl-opt-days-of-week',
+      'weekly':            'cl-opt-weekly',
+      'biweekly':          'cl-opt-biweekly',
+      'nth-weekday':       'cl-opt-nth-weekday',
+      'nth-weekend-day':   'cl-opt-nth-weekend-day',
+      'monthly-date':      'cl-opt-monthly-date',
+      'first-last-weekday':'cl-opt-first-last-weekday',
+      'yearly':            'cl-opt-yearly',
+      'every-n-days':      'cl-opt-every-n-days',
+      'one-time':          'cl-opt-one-time',
+    };
+    if (map[type]) el(map[type]).classList.remove('hidden');
+  }
+
+  var _clDragSrcIdx = null;
+
+  function renderClModalItems() {
+    var list = el('cl-items-list');
+    list.innerHTML = '';
+    _clModalItems.forEach(function (item, idx) {
+      var li = document.createElement('li');
+      li.className  = 'mp-template-item cl-modal-item';
+      li.draggable  = true;
+      li.dataset.idx = idx;
+
+      var handle = document.createElement('span');
+      handle.className   = 'drag-handle cl-item-handle';
+      handle.textContent = '⠿';
+
+      var input = document.createElement('input');
+      input.type      = 'text';
+      input.className = 'cl-item-edit-input';
+      input.value     = item.text;
+      input.addEventListener('change', function () {
+        var val = input.value.trim();
+        if (val) _clModalItems[idx].text = val;
+        else input.value = _clModalItems[idx].text;
+      });
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+      });
+
+      var del = document.createElement('button');
+      del.type        = 'button';
+      del.className   = 'mp-template-remove';
+      del.title       = 'Remove';
+      del.textContent = '✕';
+      del.addEventListener('click', function () {
+        _clModalItems.splice(idx, 1);
+        renderClModalItems();
+      });
+
+      // Drag-to-reorder
+      li.addEventListener('dragstart', function (e) {
+        _clDragSrcIdx = idx;
+        li.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      li.addEventListener('dragend', function () {
+        li.classList.remove('dragging');
+        document.querySelectorAll('.cl-modal-item').forEach(function (el2) {
+          el2.classList.remove('drag-over');
         });
-        record.items = record.items.filter(function (i) {
-          return template.indexOf(i.text) !== -1;
-        });
-        // Re-order to match template order
-        record.items.sort(function (a, b) {
-          return template.indexOf(a.text) - template.indexOf(b.text);
-        });
+      });
+      li.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        if (_clDragSrcIdx !== idx) li.classList.add('drag-over');
+      });
+      li.addEventListener('dragleave', function () {
+        li.classList.remove('drag-over');
+      });
+      li.addEventListener('drop', function (e) {
+        e.preventDefault();
+        li.classList.remove('drag-over');
+        if (_clDragSrcIdx === null || _clDragSrcIdx === idx) return;
+        var moved = _clModalItems.splice(_clDragSrcIdx, 1)[0];
+        _clModalItems.splice(idx, 0, moved);
+        _clDragSrcIdx = null;
+        renderClModalItems();
+      });
+
+      li.appendChild(handle);
+      li.appendChild(input);
+      li.appendChild(del);
+      list.appendChild(li);
+    });
+  }
+
+  function saveClModal() {
+    var name = el('cl-name').value.trim();
+    if (!name) { el('cl-name').focus(); return; }
+
+    var type = el('cl-sched-type').value;
+    var schedule = { type: type };
+
+    switch (type) {
+      case 'days-of-week':
+        schedule.days = Array.from(document.querySelectorAll('.cl-dow:checked')).map(function (cb) { return +cb.value; });
+        break;
+      case 'weekly':
+        schedule.n   = +el('cl-weekly-n').value || 1;
+        schedule.day = +el('cl-weekly-day').value;
+        break;
+      case 'biweekly':
+        schedule.start = el('cl-biweekly-start').value;
+        break;
+      case 'nth-weekday':
+        schedule.n   = +el('cl-nth-wd-n').value;
+        schedule.day = +el('cl-nth-wd-day').value;
+        break;
+      case 'nth-weekend-day':
+        schedule.n   = +el('cl-nth-we-n').value;
+        schedule.day = +el('cl-nth-we-day').value;
+        break;
+      case 'monthly-date':
+        schedule.date = +el('cl-monthly-date').value;
+        break;
+      case 'first-last-weekday':
+        schedule.which = el('cl-flw-which').value;
+        break;
+      case 'yearly':
+        schedule.date = el('cl-yearly-date').value;
+        break;
+      case 'every-n-days':
+        schedule.n     = +el('cl-every-n').value || 7;
+        schedule.start = el('cl-every-n-start').value;
+        break;
+      case 'one-time':
+        schedule.date = el('cl-one-time-date').value;
+        break;
+    }
+
+    var cls = getChecklists();
+    if (_clEditingId) {
+      var idx2 = cls.findIndex(function (c) { return c.id === _clEditingId; });
+      if (idx2 !== -1) {
+        cls[idx2].name     = name;
+        cls[idx2].schedule = schedule;
+        cls[idx2].items    = _clModalItems;
       }
+    } else {
+      cls.push({
+        id:       makeId(),
+        name:     name,
+        schedule: schedule,
+        items:    _clModalItems,
+        color:    clNextColor(cls.length),
+      });
+    }
 
-      var total = record.items.length;
-      var done  = record.items.filter(function (i) { return i.done; }).length;
-      var complete = done === total && total > 0;
+    saveChecklists(cls);
+    closeClModal();
+    renderClList();
+    renderChecklists();
+  }
 
-      morningBanner.classList.toggle('complete', complete);
-      morningBarProgress.textContent = done + ' / ' + total;
+  var CL_COLORS = ['#c0392b','#2980b9','#8e44ad','#16a085','#d35400','#27ae60','#2c3e50'];
+  function clNextColor(idx) { return CL_COLORS[idx % CL_COLORS.length]; }
 
-      morningList.innerHTML = '';
-      record.items.forEach(function (item, idx) {
-        var li  = document.createElement('li');
-        li.className = 'morning-item' + (item.done ? ' done' : '');
+  // ── Checklist banners (rendered below Morning Process) ─────────────────────
 
-        var chk = document.createElement('input');
-        chk.type    = 'checkbox';
-        chk.checked = item.done;
-        chk.addEventListener('change', function () {
-          record.items[idx].done = chk.checked;
-          DB.putMorningDay(record).then(function () {
-            var allDone = record.items.every(function (i) { return i.done; });
-            if (allDone) setMorningExpanded(false);
-            renderMorning();
+  function renderChecklists() {
+    var container = el('cl-banners');
+    container.innerHTML = '';
+
+    var cls = getChecklists();
+    if (!cls.length) return;
+
+    cls.forEach(function (cl) {
+      DB.getSetting('cl_state_' + cl.id).then(function (stateJson) {
+        var state;
+        if (stateJson) {
+          try { state = JSON.parse(stateJson); } catch(e) { state = null; }
+        }
+
+        var scheduledToday = clAppliesToDay(cl, currentDate);
+
+        if (!scheduledToday && !state) return; // not scheduled and no prior carry state
+
+        if (!state) {
+          // No state yet — create fresh
+          state = {
+            resetOnDate: currentDate,
+            dismissed:   false,
+            items: cl.items.map(function (item) { return { id: item.id, text: item.text, done: false }; }),
+          };
+          DB.setSetting('cl_state_' + cl.id, JSON.stringify(state));
+        } else {
+          // Sync template items into state — add new ones, remove deleted ones, keep done flags
+          var stateMap = {};
+          state.items.forEach(function (i) { stateMap[i.id] = i; });
+          var synced = cl.items.map(function (item) {
+            return stateMap[item.id]
+              ? { id: item.id, text: item.text, done: stateMap[item.id].done }
+              : { id: item.id, text: item.text, done: false };
           });
-        });
+          var changed = JSON.stringify(synced) !== JSON.stringify(state.items);
+          state.items = synced;
+          if (changed) DB.setSetting('cl_state_' + cl.id, JSON.stringify(state));
+        }
 
-        var span = document.createElement('span');
-        span.className   = 'morning-item-text';
-        span.textContent = item.text;
-        span.addEventListener('click', function () { chk.click(); });
-
-        li.appendChild(chk);
-        li.appendChild(span);
-        morningList.appendChild(li);
+        renderClBanner(container, cl, state);
       });
     });
   }
+
+  function renderClBanner(container, cl, state) {
+    var doneCount = state.items.filter(function (i) { return i.done; }).length;
+    var total     = state.items.length;
+
+    var wrapper = document.createElement('div');
+    wrapper.className = 'morning-banner cl-banner';
+    wrapper.dataset.clId = cl.id;
+
+    var bar = document.createElement('div');
+    bar.className = 'morning-bar';
+    bar.style.setProperty('--morning-bar-bg', cl.color || '#c0392b');
+
+    var labelSpan = document.createElement('span');
+    labelSpan.className   = 'morning-bar-label';
+    labelSpan.textContent = cl.name;
+
+    var progSpan = document.createElement('span');
+    progSpan.className   = 'morning-bar-progress';
+    progSpan.textContent = (total > 0 && doneCount === total) ? '✓ done' : (doneCount + ' / ' + total);
+
+    var schedSpan = document.createElement('span');
+    schedSpan.className   = 'cl-banner-sched';
+    schedSpan.textContent = clSchedLabel(cl.schedule);
+
+    var toggleBtn = document.createElement('button');
+    toggleBtn.className   = 'morning-bar-toggle icon-btn';
+    toggleBtn.title       = 'Expand / collapse';
+    toggleBtn.textContent = '▾';
+
+    bar.appendChild(labelSpan);
+    bar.appendChild(progSpan);
+    bar.appendChild(schedSpan);
+    bar.appendChild(toggleBtn);
+
+    var body = document.createElement('div');
+    body.className = 'morning-body hidden';
+
+    var ul = document.createElement('ul');
+    ul.className = 'morning-list';
+
+    state.items.forEach(function (item, idx) {
+      var li = document.createElement('li');
+      li.className = 'morning-item' + (item.done ? ' done' : '');
+
+      var chk = document.createElement('input');
+      chk.type    = 'checkbox';
+      chk.checked = item.done;
+      chk.addEventListener('change', function () {
+        state.items[idx].done = chk.checked;
+        DB.setSetting('cl_state_' + cl.id, JSON.stringify(state)).then(function () {
+          renderChecklists();
+        });
+      });
+
+      var span = document.createElement('span');
+      span.className   = 'morning-item-text';
+      span.textContent = item.text;
+      span.addEventListener('click', function () { chk.click(); });
+
+      li.appendChild(chk);
+      li.appendChild(span);
+      ul.appendChild(li);
+    });
+
+    var footer = document.createElement('div');
+    footer.className = 'cl-banner-footer';
+
+    var completeBtn = document.createElement('button');
+    completeBtn.className   = 'setting-btn cl-complete-btn';
+    completeBtn.textContent = '✓ Check all items';
+    completeBtn.addEventListener('click', function () {
+      state.items.forEach(function (item) { item.done = true; });
+      DB.setSetting('cl_state_' + cl.id, JSON.stringify(state)).then(function () {
+        renderChecklists();
+      });
+    });
+
+    footer.appendChild(completeBtn);
+    body.appendChild(ul);
+    body.appendChild(footer);
+    wrapper.appendChild(bar);
+    wrapper.appendChild(body);
+    container.appendChild(wrapper);
+
+    bar.addEventListener('click', function () {
+      var expanded = wrapper.classList.toggle('expanded');
+      body.classList.toggle('hidden', !expanded);
+    });
+  }
+
+  el('cl-new-btn').addEventListener('click', function () { openClModal(null); });
+
 
   // ── Init ───────────────────────────────────────────────────────────────────
 
@@ -1441,7 +1863,6 @@
 
     applySettings();
     updateDateUI();
-    renderMorning();
     scheduleMidnight();
     return render();
   }).then(function () {

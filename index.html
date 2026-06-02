@@ -66,17 +66,8 @@
     <button class="carry-banner-dismiss" id="carry-banner-dismiss">✕</button>
   </div>
 
-  <!-- MORNING PROCESS BANNER -->
-  <div class="morning-banner" id="morning-banner">
-    <div class="morning-bar" id="morning-bar">
-      <span class="morning-bar-label" id="morning-bar-label">Morning Process</span>
-      <span class="morning-bar-progress" id="morning-bar-progress"></span>
-      <button class="morning-bar-toggle icon-btn" id="morning-bar-toggle" title="Expand / collapse">▾</button>
-    </div>
-    <div class="morning-body hidden" id="morning-body">
-      <ul class="morning-list" id="morning-list"></ul>
-    </div>
-  </div>
+  <!-- CHECKLIST BANNERS (injected by JS) -->
+  <div id="cl-banners"></div>
 
   <!-- PANELS -->
   <main class="panels" id="panels">
@@ -154,13 +145,10 @@
     </div>
     <hr class="divider" />
     <div class="setting-group">
-      <label class="setting-label">Morning Process template</label>
-      <p class="setting-hint">Build your daily checklist. Resets fresh each day.</p>
-      <ul class="mp-template-list" id="mp-template-list"></ul>
-      <form class="mp-template-add-form" id="mp-template-add-form">
-        <input class="setting-input mp-template-input" id="mp-template-new" type="text" placeholder="Add item…" autocomplete="off" />
-        <button class="setting-btn" type="submit">＋ Add</button>
-      </form>
+      <label class="setting-label">Scheduled Checklists</label>
+      <p class="setting-hint">Create recurring checklists (Morning Process, Monthly Reconcile, etc.) that appear as banners on their scheduled days.</p>
+      <ul class="cl-list" id="cl-list"></ul>
+      <button class="setting-btn" id="cl-new-btn" style="margin-top:8px;">＋ New Checklist</button>
     </div>
     <hr class="divider" />
     <div class="setting-group">
@@ -279,6 +267,172 @@
       <button class="del-btn icon-btn archive-icon" title="Archive"><svg class="archive-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18v2a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6z"/><path d="M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9"/><line x1="12" y1="13" x2="12" y2="17"/><polyline points="9.5 14.5 12 17 14.5 14.5"/></svg></button>
     </li>
   </template>
+
+  <!-- CHECKLIST EDITOR MODAL -->
+  <div class="overlay hidden" id="cl-modal-overlay"></div>
+  <div class="modal hidden" id="cl-modal" style="width:min(560px,96vw);max-height:90vh;overflow-y:auto;">
+    <div class="modal-header">
+      <h3 id="cl-modal-title">New Checklist</h3>
+      <button class="icon-btn close-btn" id="cl-modal-close">✕</button>
+    </div>
+    <div class="modal-body" style="gap:14px;">
+      <div class="field">
+        <label>Name</label>
+        <input type="text" id="cl-name" placeholder="e.g. Morning Process" />
+      </div>
+      <div class="field">
+        <label>Schedule Type</label>
+        <select id="cl-sched-type">
+          <option value="daily">Daily</option>
+          <option value="weekdays">Weekdays only (Mon–Fri)</option>
+          <option value="weekends">Weekends only (Sat–Sun)</option>
+          <option value="days-of-week">Specific days of the week</option>
+          <option value="weekly">Weekly (every N weeks on a day)</option>
+          <option value="biweekly">Bi-weekly</option>
+          <option value="nth-weekday">Nth weekday of the month (e.g. 1st Monday)</option>
+          <option value="nth-weekend-day">Nth weekend day of the month (e.g. 2nd Saturday)</option>
+          <option value="monthly-date">Monthly by date (e.g. 1st, 15th)</option>
+          <option value="first-last-weekday">First or last weekday of the month</option>
+          <option value="quarterly">Quarterly</option>
+          <option value="yearly">Yearly</option>
+          <option value="every-n-days">Every N days</option>
+          <option value="one-time">One-time (specific date)</option>
+        </select>
+      </div>
+
+      <!-- days-of-week -->
+      <div class="field cl-opt hidden" id="cl-opt-days-of-week">
+        <label>Days of Week</label>
+        <div class="cl-dow-row">
+          <label><input type="checkbox" class="cl-dow" value="0" /> Sun</label>
+          <label><input type="checkbox" class="cl-dow" value="1" /> Mon</label>
+          <label><input type="checkbox" class="cl-dow" value="2" /> Tue</label>
+          <label><input type="checkbox" class="cl-dow" value="3" /> Wed</label>
+          <label><input type="checkbox" class="cl-dow" value="4" /> Thu</label>
+          <label><input type="checkbox" class="cl-dow" value="5" /> Fri</label>
+          <label><input type="checkbox" class="cl-dow" value="6" /> Sat</label>
+        </div>
+      </div>
+
+      <!-- weekly -->
+      <div class="field cl-opt hidden" id="cl-opt-weekly">
+        <label>Every N weeks, on day</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="number" id="cl-weekly-n" min="1" max="52" value="1" style="width:70px;" />
+          <span>week(s) on</span>
+          <select id="cl-weekly-day">
+            <option value="0">Sunday</option>
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5">Friday</option>
+            <option value="6">Saturday</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- biweekly -->
+      <div class="field cl-opt hidden" id="cl-opt-biweekly">
+        <label>Bi-weekly — starting from</label>
+        <input type="date" id="cl-biweekly-start" />
+      </div>
+
+      <!-- nth-weekday -->
+      <div class="field cl-opt hidden" id="cl-opt-nth-weekday">
+        <label>Nth Weekday of Month</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="cl-nth-wd-n">
+            <option value="1">1st</option>
+            <option value="2">2nd</option>
+            <option value="3">3rd</option>
+            <option value="4">4th</option>
+            <option value="-1">Last</option>
+          </select>
+          <select id="cl-nth-wd-day">
+            <option value="0">Sunday</option>
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5">Friday</option>
+            <option value="6">Saturday</option>
+          </select>
+          <span>of the month</span>
+        </div>
+      </div>
+
+      <!-- nth-weekend-day -->
+      <div class="field cl-opt hidden" id="cl-opt-nth-weekend-day">
+        <label>Nth Weekend Day of Month</label>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="cl-nth-we-n">
+            <option value="1">1st</option>
+            <option value="2">2nd</option>
+          </select>
+          <select id="cl-nth-we-day">
+            <option value="6">Saturday</option>
+            <option value="0">Sunday</option>
+          </select>
+          <span>of the month</span>
+        </div>
+      </div>
+
+      <!-- monthly-date -->
+      <div class="field cl-opt hidden" id="cl-opt-monthly-date">
+        <label>Day of Month (1–31)</label>
+        <input type="number" id="cl-monthly-date" min="1" max="31" value="1" style="width:80px;" />
+      </div>
+
+      <!-- first-last-weekday -->
+      <div class="field cl-opt hidden" id="cl-opt-first-last-weekday">
+        <label>First or Last Weekday</label>
+        <select id="cl-flw-which">
+          <option value="first">First weekday of the month</option>
+          <option value="last">Last weekday of the month</option>
+        </select>
+      </div>
+
+      <!-- quarterly — no extra options needed -->
+
+      <!-- yearly -->
+      <div class="field cl-opt hidden" id="cl-opt-yearly">
+        <label>Day of Year (MM-DD)</label>
+        <input type="text" id="cl-yearly-date" placeholder="e.g. 01-01" pattern="\d{2}-\d{2}" style="width:120px;" />
+      </div>
+
+      <!-- every-n-days -->
+      <div class="field cl-opt hidden" id="cl-opt-every-n-days">
+        <label>Every N Days</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="number" id="cl-every-n" min="1" max="365" value="7" style="width:80px;" />
+          <span>days, starting from</span>
+          <input type="date" id="cl-every-n-start" />
+        </div>
+      </div>
+
+      <!-- one-time -->
+      <div class="field cl-opt hidden" id="cl-opt-one-time">
+        <label>Specific Date</label>
+        <input type="date" id="cl-one-time-date" />
+      </div>
+
+
+      <div class="field">
+        <label>Items</label>
+        <ul class="cl-items-list" id="cl-items-list"></ul>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <input type="text" id="cl-item-new" placeholder="Add item…" style="flex:1;" />
+          <button type="button" class="setting-btn" id="cl-item-add-btn">＋ Add</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="setting-btn" id="cl-modal-cancel">Cancel</button>
+      <button class="setting-btn danger-btn hidden" id="cl-modal-delete">Delete Checklist</button>
+      <button class="setting-btn primary" id="cl-modal-save">Save</button>
+    </div>
+  </div>
 
   <!-- TOAST -->
   <div class="toast hidden" id="toast"></div>
