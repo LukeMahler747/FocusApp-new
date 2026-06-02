@@ -214,14 +214,28 @@
 
   window.addEventListener('online', function () {
     updateOnline();
-    // Push any changes that accumulated while offline
+    // Push any local changes that accumulated while offline, then pull remote
     gistPush();
+    setTimeout(function () { gistPull(true); }, 1500);
   });
   window.addEventListener('offline', updateOnline);
+
+  // Auto-pull from Gist every 60 seconds when online
+  setInterval(function () {
+    if (navigator.onLine && settings.gistToken && settings.gistId) {
+      gistPull(true);
+    }
+  }, 60 * 1000);
   syncBtn.addEventListener('click', function () {
     updateOnline();
-    gistPush();
     folderSync();
+    // Push local changes up, then pull remote changes down and merge
+    if (navigator.onLine && settings.gistToken && settings.gistId) {
+      gistSetStatus('Syncing…', '', false);
+      _doPush(settings.gistToken, settings.gistId);
+      // Pull after a short delay to let the push land
+      setTimeout(function () { gistPull(false); }, 1200);
+    }
   });
   updateOnline();
 
@@ -365,6 +379,10 @@
   function saveSetting(key, value) {
     settings[key] = value;
     DB.setSetting(key, value);
+    // Bump the settings timestamp so remote merge knows this side is newer
+    var ts = Date.now();
+    settings.settingsUpdatedAt = ts;
+    DB.setSetting('settingsUpdatedAt', ts);
   }
 
   el('set-name-left').addEventListener('change', function () {
@@ -1204,51 +1222,198 @@
 
   // ── GitHub Gist sync ───────────────────────────────────────────────────────
 
+  var _gistPushTimer  = null;  // debounce handle
+  var _gistPulling    = false; // guard against concurrent pulls
+  var _gistPushPending = false; // a push is queued
+
+  function gistSetStatus(text, cls, autoClear) {
+    var statusEl = el('gist-status');
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.className   = 'gist-status' + (cls ? ' ' + cls : '');
+    clearTimeout(statusEl._t);
+    if (autoClear) {
+      statusEl._t = setTimeout(function () {
+        statusEl.textContent = '';
+        statusEl.className   = 'gist-status';
+      }, 3000);
+    }
+  }
+
   function gistPush() {
-    var token = settings.gistToken;
+    var token  = settings.gistToken;
     var gistId = settings.gistId;
-    if (!token || !gistId) return;
+    if (!token || !gistId || !navigator.onLine) return;
+
+    // Debounce: coalesce rapid successive pushes into one
+    clearTimeout(_gistPushTimer);
+    _gistPushTimer = setTimeout(function () {
+      _doPush(token, gistId);
+    }, 800);
+  }
+
+  function _doPush(token, gistId) {
     DB.getAllTodos().then(function (all) {
       return DB.getAllSettings().then(function (s) {
-        // Strip credentials from the saved settings copy
         var savedSettings = Object.assign({}, s);
         delete savedSettings.gistToken;
+        savedSettings.settingsUpdatedAt = Date.now(); // timestamp for merge arbitration
         return { todos: all, settings: savedSettings };
       });
     }).then(function (payload) {
       var body = JSON.stringify({
         files: { 'focusapp-data.json': { content: JSON.stringify(payload, null, 2) } }
       });
-      fetch('https://api.github.com/gists/' + gistId, {
+      return fetch('https://api.github.com/gists/' + gistId, {
         method: 'PATCH',
-        headers: {
-          'Authorization': 'token ' + token,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Authorization': 'token ' + token, 'Content-Type': 'application/json' },
         body: body
-      }).then(function (r) {
-        var statusEl = el('gist-status');
-        if (!statusEl) return;
-        if (r.ok) {
-          statusEl.textContent = 'Saved ✓';
-          statusEl.className = 'gist-status ok';
-          clearTimeout(statusEl._t);
-          statusEl._t = setTimeout(function () { statusEl.textContent = ''; statusEl.className = 'gist-status'; }, 3000);
-        } else {
-          statusEl.textContent = 'Sync error ' + r.status;
-          statusEl.className = 'gist-status err';
-        }
-      }).catch(function () {
-        var statusEl = el('gist-status');
-        if (statusEl) { statusEl.textContent = 'Offline'; statusEl.className = 'gist-status err'; }
+      });
+    }).then(function (r) {
+      if (r.ok) {
+        DB.setSetting('gistLastPushedAt', Date.now());
+        gistSetStatus('Saved ✓', 'ok', true);
+      } else {
+        gistSetStatus('Sync error ' + r.status, 'err', false);
+      }
+    }).catch(function () {
+      gistSetStatus('Offline', 'err', false);
+    });
+  }
+
+  // ── Gist pull + merge ──────────────────────────────────────────────────────
+
+  function gistPull(silent) {
+    var token  = settings.gistToken;
+    var gistId = settings.gistId;
+    if (!token || !gistId || !navigator.onLine) return Promise.resolve();
+    if (_gistPulling) return Promise.resolve();
+    _gistPulling = true;
+
+    if (!silent) gistSetStatus('Syncing…', '', false);
+
+    return fetch('https://api.github.com/gists/' + gistId, {
+      headers: { 'Authorization': 'token ' + token }
+    }).then(function (r) {
+      if (!r.ok) throw new Error('Status ' + r.status);
+      return r.json();
+    }).then(function (data) {
+      var file = data.files && data.files['focusapp-data.json'];
+      if (!file) throw new Error('focusapp-data.json not found in Gist');
+      var payload = JSON.parse(file.content);
+
+      var remoteTodos    = Array.isArray(payload) ? payload : (payload.todos    || []);
+      var remoteSettings = Array.isArray(payload) ? {}      : (payload.settings || {});
+
+      return _mergeFromRemote(remoteTodos, remoteSettings);
+    }).then(function (changed) {
+      _gistPulling = false;
+      if (changed) {
+        applySettings();
+        render();
+        if (!silent) gistSetStatus('Pulled ✓', 'ok', true);
+      } else {
+        if (!silent) gistSetStatus('Up to date ✓', 'ok', true);
+      }
+    }).catch(function (err) {
+      _gistPulling = false;
+      if (!silent) gistSetStatus('Pull error: ' + err.message, 'err', false);
+    });
+  }
+
+  function _mergeFromRemote(remoteTodos, remoteSettings) {
+    return DB.getAllTodos().then(function (localTodos) {
+      return DB.getAllTrash().then(function (trash) {
+        return DB.getAllSettings().then(function (localSettings) {
+          var ops = [];
+          var changed = false;
+
+          // ── Merge todos by ID ──────────────────────────────────────────────
+          var trashIds = new Set(trash.map(function (t) { return t.id; }));
+          var localMap = {};
+          localTodos.forEach(function (t) { localMap[t.id] = t; });
+
+          remoteTodos.forEach(function (remote) {
+            if (!remote.id || !remote.text) return;
+            if (trashIds.has(remote.id)) return; // deleted locally — don't resurrect
+
+            var local = localMap[remote.id];
+            if (!local) {
+              // New item from remote — add it
+              ops.push(DB.putTodo(remote));
+              changed = true;
+            } else {
+              // Both have it — keep whichever is newer
+              var remoteTs = remote.updatedAt || remote.createdAt || 0;
+              var localTs  = local.updatedAt  || local.createdAt  || 0;
+              if (remoteTs > localTs) {
+                ops.push(DB.putTodo(remote));
+                changed = true;
+              }
+            }
+          });
+
+          // ── Merge settings ─────────────────────────────────────────────────
+          var remoteSettingsTs = remoteSettings.settingsUpdatedAt || 0;
+          var localSettingsTs  = localSettings.settingsUpdatedAt  || 0;
+
+          Object.keys(remoteSettings).forEach(function (key) {
+            if (key === 'gistToken' || key === 'gistId') return; // never overwrite credentials
+
+            if (key.indexOf('cl_state_') === 0) {
+              // Per-day checklist state — merge by per-key timestamp
+              var remoteState = null;
+              try { remoteState = JSON.parse(remoteSettings[key]); } catch(e) {}
+              if (!remoteState) return;
+
+              var localStateRaw = localSettings[key];
+              var localState = null;
+              try { localState = localStateRaw ? JSON.parse(localStateRaw) : null; } catch(e) {}
+
+              if (!localState) {
+                // Remote has state we don't have locally
+                settings[key] = remoteSettings[key];
+                ops.push(DB.setSetting(key, remoteSettings[key]));
+                changed = true;
+              } else {
+                var remoteStateTs = remoteState.updatedAt || 0;
+                var localStateTs  = localState.updatedAt  || 0;
+                if (remoteStateTs > localStateTs) {
+                  settings[key] = remoteSettings[key];
+                  ops.push(DB.setSetting(key, remoteSettings[key]));
+                  changed = true;
+                }
+              }
+            } else {
+              // Regular setting — remote wins if it's newer overall
+              if (remoteSettingsTs > localSettingsTs) {
+                if (localSettings[key] !== remoteSettings[key]) {
+                  settings[key] = remoteSettings[key];
+                  ops.push(DB.setSetting(key, remoteSettings[key]));
+                  changed = true;
+                }
+              }
+            }
+          });
+
+          if (remoteSettingsTs > localSettingsTs) {
+            DB.setSetting('settingsUpdatedAt', remoteSettingsTs);
+          }
+
+          return Promise.all(ops).then(function () { return changed; });
+        });
       });
     });
   }
 
+  // ── Gist restore (full overwrite, used by Restore button) ─────────────────
+
   function gistRestore() {
-    var token = settings.gistToken;
+    var token  = settings.gistToken;
     var gistId = settings.gistId;
     if (!token || !gistId) { showToast('Enter a token and Gist ID first'); return; }
+
+    gistSetStatus('Restoring…', '', false);
     fetch('https://api.github.com/gists/' + gistId, {
       headers: { 'Authorization': 'token ' + token }
     }).then(function (r) {
@@ -1259,15 +1424,13 @@
       if (!file) throw new Error('focusapp-data.json not found in Gist');
       var payload = JSON.parse(file.content);
 
-      // Support both old format (plain array) and new format ({ todos, settings })
-      var todos    = Array.isArray(payload) ? payload : (payload.todos || []);
-      var savedSettings = Array.isArray(payload) ? {} : (payload.settings || {});
+      var todos         = Array.isArray(payload) ? payload : (payload.todos    || []);
+      var savedSettings = Array.isArray(payload) ? {}      : (payload.settings || {});
 
       var ops = todos
         .filter(function (item) { return item.id && item.text; })
-        .map(function (item) { return DB.putTodo(item); });
+        .map(function (item)    { return DB.putTodo(item); });
 
-      // Restore settings (skip credentials — keep current token/gistId)
       Object.keys(savedSettings).forEach(function (key) {
         if (key === 'gistToken' || key === 'gistId') return;
         settings[key] = savedSettings[key];
@@ -1278,8 +1441,10 @@
     }).then(function () {
       applySettings();
       render();
+      gistSetStatus('Restored ✓', 'ok', true);
       showToast('Restored from Gist');
     }).catch(function (err) {
+      gistSetStatus('Restore failed', 'err', false);
       showToast('Restore failed: ' + err.message, 5000);
     });
   }
@@ -1766,6 +1931,7 @@
           // First time viewing this checklist on this date — create fresh state
           state = {
             items: cl.items.map(function (item) { return { id: item.id, text: item.text, links: item.links || '', notes: item.notes || '', done: false }; }),
+            updatedAt: Date.now(),
           };
           DB.setSetting(stateKey, JSON.stringify(state));
         } else {
@@ -1779,7 +1945,10 @@
           });
           var changed = JSON.stringify(synced) !== JSON.stringify(state.items);
           state.items = synced;
-          if (changed) DB.setSetting(stateKey, JSON.stringify(state));
+          if (changed) {
+            state.updatedAt = Date.now();
+            DB.setSetting(stateKey, JSON.stringify(state));
+          }
         }
 
         renderClBanner(container, cl, state, stateKey);
@@ -1837,6 +2006,7 @@
       chk.checked = item.done;
       chk.addEventListener('change', function () {
         state.items[idx].done = chk.checked;
+        state.updatedAt = Date.now();
         DB.setSetting(stateKey, JSON.stringify(state)).then(function () {
           renderChecklists();
         });
@@ -1884,6 +2054,7 @@
     completeBtn.textContent = '✓ Check all items';
     completeBtn.addEventListener('click', function () {
       state.items.forEach(function (item) { item.done = true; });
+      state.updatedAt = Date.now();
       DB.setSetting(stateKey, JSON.stringify(state)).then(function () {
         renderChecklists();
       });

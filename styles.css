@@ -616,6 +616,13 @@ details[open] .done-toggle::before { transform: rotate(90deg); }
 }
 .setting-input:focus { border-color: var(--border-focus); }
 .setting-hint { font-size: .8rem; color: var(--text-muted); margin-top: 4px; }
+.setting-sublabel {
+  display: block;
+  font-size: .72rem;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+  margin-top: 2px;
+}
 
 .time-row { display: flex; align-items: center; gap: 10px; }
 .time-input { flex: 1; }

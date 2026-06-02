@@ -163,8 +163,10 @@
     <div class="setting-group">
       <label class="setting-label">GitHub Gist sync</label>
       <p class="setting-hint">Auto-saves all data to a private GitHub Gist on every change.</p>
-      <input class="setting-input" id="set-gist-token" type="password" placeholder="Personal access token (gist scope)" autocomplete="off" />
-      <input class="setting-input" id="set-gist-id" type="text" placeholder="Gist ID" autocomplete="off" style="margin-top:6px;" />
+      <label class="setting-sublabel">Personal access token (gist scope)</label>
+      <input class="setting-input" id="set-gist-token" type="password" autocomplete="off" />
+      <label class="setting-sublabel" style="margin-top:6px;">Gist ID</label>
+      <input class="setting-input" id="set-gist-id" type="text" autocomplete="off" />
       <div class="sync-file-row" style="margin-top:6px;">
         <button class="setting-btn" id="gist-restore-btn">Restore from Gist</button>
         <span class="gist-status" id="gist-status"></span>
