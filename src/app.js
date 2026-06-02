@@ -1697,7 +1697,6 @@
         name:     name,
         schedule: schedule,
         items:    _clModalItems,
-        color:    clNextColor(cls.length),
       });
     }
 
@@ -1706,9 +1705,6 @@
     renderClList();
     renderChecklists();
   }
-
-  var CL_COLORS = ['#c0392b','#2980b9','#8e44ad','#16a085','#d35400','#27ae60','#2c3e50'];
-  function clNextColor(idx) { return CL_COLORS[idx % CL_COLORS.length]; }
 
   // ── Checklist banners (rendered below Morning Process) ─────────────────────
 
@@ -1767,7 +1763,8 @@
 
     var bar = document.createElement('div');
     bar.className = 'morning-bar';
-    bar.style.setProperty('--morning-bar-bg', cl.color || '#c0392b');
+    var allDone = doneCount === total && total > 0;
+    bar.style.setProperty('--morning-bar-bg', allDone ? '#274D77' : '#c0392b');
 
     var labelSpan = document.createElement('span');
     labelSpan.className   = 'morning-bar-label';
