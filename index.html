@@ -52,9 +52,9 @@
   <!-- DATE NAV -->
   <div class="date-nav">
     <button class="nav-btn" id="prev-btn">‹ Prev</button>
-    <span class="date-label" id="date-label"></span>
     <button class="nav-btn" id="next-btn">Next ›</button>
     <button class="nav-btn today-btn" id="today-btn">Today</button>
+    <span class="date-label" id="date-label"></span>
     <button class="nav-btn carry-btn hidden" id="carry-btn">⤴ Carry Forward</button>
     <button class="nav-btn select-mode-btn" id="select-mode-btn">Select</button>
   </div>
@@ -421,9 +421,11 @@
       <div class="field">
         <label>Items</label>
         <ul class="cl-items-list" id="cl-items-list"></ul>
-        <div style="display:flex;gap:6px;margin-top:6px;">
-          <input type="text" id="cl-item-new" placeholder="Add item…" style="flex:1;" />
-          <button type="button" class="setting-btn" id="cl-item-add-btn">＋ Add</button>
+        <div style="display:flex;flex-direction:column;gap:4px;margin-top:6px;padding:8px;border:1px solid var(--border);border-radius:var(--r-sm);">
+          <input type="text" id="cl-item-new" placeholder="Item text…" />
+          <input type="text" id="cl-item-new-links" placeholder="Links (comma-separated, optional)" />
+          <textarea id="cl-item-new-notes" rows="2" placeholder="Notes (optional)" style="resize:vertical;"></textarea>
+          <button type="button" class="setting-btn" id="cl-item-add-btn" style="align-self:flex-end;">＋ Add Item</button>
         </div>
       </div>
     </div>

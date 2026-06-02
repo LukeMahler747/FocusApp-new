@@ -241,7 +241,7 @@ body {
 .today-btn { font-weight: 700; }
 .carry-btn { color: #38a169; border-color: #38a169; font-weight: 700; }
 .carry-btn:hover { background: #f0fff4; }
-.select-mode-btn { margin-left: auto; }
+.select-mode-btn { margin-left: 0; }
 .select-mode-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 700; }
 
 /* ── Carry banner ────────────────────────────────────────────────────────── */
@@ -285,6 +285,7 @@ body {
   font-size: 1.1rem;
   letter-spacing: .01em;
   color: var(--text);
+  flex: 1;
 }
 
 /* ── Panels ──────────────────────────────────────────────────────────────── */
@@ -910,26 +911,26 @@ details[open] .done-toggle::before { transform: rotate(90deg); }
 }
 .cl-list-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 6px 8px;
   border-radius: var(--r-sm);
   background: var(--bg-input);
   border: 1px solid var(--border);
   font-size: .88rem;
+  flex-wrap: wrap;
 }
 .cl-list-name {
   font-weight: 600;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
 }
 .cl-list-sched {
   font-size: .75rem;
   color: var(--text-muted);
   flex-shrink: 0;
+  padding-top: 1px;
 }
 
 /* ── Checklist editor modal ──────────────────────────────────────────────── */
@@ -985,6 +986,14 @@ details[open] .done-toggle::before { transform: rotate(90deg); }
   white-space: nowrap;
 }
 
+
+.cl-item-link {
+  font-size: .72rem;
+  color: #4299e1;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.cl-item-link:hover { text-decoration: underline; }
 
 .cl-banner-footer {
   display: flex;

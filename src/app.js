@@ -1511,11 +1511,18 @@
       });
 
       el('cl-item-add-btn').addEventListener('click', function () {
-        var inp = el('cl-item-new');
-        var txt = inp.value.trim();
+        var inp   = el('cl-item-new');
+        var txt   = inp.value.trim();
         if (!txt) return;
-        _clModalItems.push({ text: txt, id: makeId() });
+        _clModalItems.push({
+          id:    makeId(),
+          text:  txt,
+          links: el('cl-item-new-links').value.trim(),
+          notes: el('cl-item-new-notes').value.trim(),
+        });
         inp.value = '';
+        el('cl-item-new-links').value = '';
+        el('cl-item-new-notes').value = '';
         inp.focus();
         renderClModalItems();
       });
@@ -1580,6 +1587,9 @@
       handle.className   = 'drag-handle cl-item-handle';
       handle.textContent = '⠿';
 
+      var itemBody = document.createElement('div');
+      itemBody.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;';
+
       var input = document.createElement('input');
       input.type      = 'text';
       input.className = 'cl-item-edit-input';
@@ -1592,6 +1602,30 @@
       input.addEventListener('keydown', function (e) {
         if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
       });
+
+      var linksInput = document.createElement('input');
+      linksInput.type        = 'text';
+      linksInput.className   = 'cl-item-edit-input';
+      linksInput.placeholder = 'Links (comma-separated)';
+      linksInput.value       = item.links || '';
+      linksInput.style.fontSize = '.78rem';
+      linksInput.addEventListener('change', function () {
+        _clModalItems[idx].links = linksInput.value.trim();
+      });
+
+      var notesInput = document.createElement('textarea');
+      notesInput.className   = 'cl-item-edit-input';
+      notesInput.placeholder = 'Notes';
+      notesInput.value       = item.notes || '';
+      notesInput.rows        = 1;
+      notesInput.style.cssText = 'font-size:.78rem;resize:vertical;';
+      notesInput.addEventListener('change', function () {
+        _clModalItems[idx].notes = notesInput.value.trim();
+      });
+
+      itemBody.appendChild(input);
+      itemBody.appendChild(linksInput);
+      itemBody.appendChild(notesInput);
 
       var del = document.createElement('button');
       del.type        = 'button';
@@ -1633,7 +1667,7 @@
       });
 
       li.appendChild(handle);
-      li.appendChild(input);
+      li.appendChild(itemBody);
       li.appendChild(del);
       list.appendChild(li);
     });
@@ -1731,7 +1765,7 @@
         if (!state) {
           // First time viewing this checklist on this date — create fresh state
           state = {
-            items: cl.items.map(function (item) { return { id: item.id, text: item.text, done: false }; }),
+            items: cl.items.map(function (item) { return { id: item.id, text: item.text, links: item.links || '', notes: item.notes || '', done: false }; }),
           };
           DB.setSetting(stateKey, JSON.stringify(state));
         } else {
@@ -1740,8 +1774,8 @@
           state.items.forEach(function (i) { stateMap[i.id] = i; });
           var synced = cl.items.map(function (item) {
             return stateMap[item.id]
-              ? { id: item.id, text: item.text, done: stateMap[item.id].done }
-              : { id: item.id, text: item.text, done: false };
+              ? { id: item.id, text: item.text, links: item.links || '', notes: item.notes || '', done: stateMap[item.id].done }
+              : { id: item.id, text: item.text, links: item.links || '', notes: item.notes || '', done: false };
           });
           var changed = JSON.stringify(synced) !== JSON.stringify(state.items);
           state.items = synced;
@@ -1808,13 +1842,37 @@
         });
       });
 
+      var itemContent = document.createElement('span');
+      itemContent.style.cssText = 'flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px;';
+
       var span = document.createElement('span');
       span.className   = 'morning-item-text';
       span.textContent = item.text;
       span.addEventListener('click', function () { chk.click(); });
+      itemContent.appendChild(span);
+
+      if (item.links) {
+        item.links.split(',').map(function (s) { return s.trim(); }).filter(Boolean).forEach(function (url, i) {
+          var a = document.createElement('a');
+          a.href      = url;
+          a.target    = '_blank';
+          a.rel       = 'noopener noreferrer';
+          a.textContent = '[' + (i + 1) + ']';
+          a.className = 'cl-item-link';
+          itemContent.appendChild(a);
+        });
+      }
+
+      if (item.notes) {
+        var notesIcon = document.createElement('span');
+        notesIcon.className = 'item-notes';
+        notesIcon.title     = item.notes;
+        notesIcon.textContent = '📝';
+        itemContent.appendChild(notesIcon);
+      }
 
       li.appendChild(chk);
-      li.appendChild(span);
+      li.appendChild(itemContent);
       ul.appendChild(li);
     });
 
