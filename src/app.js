@@ -231,14 +231,22 @@
     folderSync();
     // Push then pull — chained so pull waits for push to finish
     if (navigator.onLine && settings.gistToken && settings.gistId) {
+      showToast('Syncing…');
       gistSetStatus('Syncing…', '', false);
       _doPush(settings.gistToken, settings.gistId).then(function () {
         return gistPull(false);
       }).then(function () {
+        showToast('Sync complete ✓');
         gistSetStatus('Sync complete ✓', 'ok', true);
       }).catch(function (err) {
-        gistSetStatus('Sync error: ' + (err && err.message || err), 'err', false);
+        var msg = 'Sync error: ' + (err && err.message || err);
+        showToast(msg, 5000);
+        gistSetStatus(msg, 'err', false);
       });
+    } else if (!navigator.onLine) {
+      showToast('Offline — sync skipped');
+    } else if (!settings.gistToken || !settings.gistId) {
+      showToast('No Gist configured — open Settings to set up sync');
     }
   });
   updateOnline();
