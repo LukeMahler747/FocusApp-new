@@ -214,9 +214,8 @@
 
   window.addEventListener('online', function () {
     updateOnline();
-    // Push any local changes that accumulated while offline, then pull remote
-    gistPush();
-    setTimeout(function () { gistPull(true); }, 1500);
+    // Pull remote first, then push merged result up
+    gistPull(true).then(function () { gistPush(); });
   });
   window.addEventListener('offline', updateOnline);
 
@@ -229,12 +228,12 @@
   syncBtn.addEventListener('click', function () {
     updateOnline();
     folderSync();
-    // Push then pull — chained so pull waits for push to finish
+    // Pull first (get remote changes), then push (send merged result up)
     if (navigator.onLine && settings.gistToken && settings.gistId) {
       showToast('Syncing…');
       gistSetStatus('Syncing…', '', false);
-      _doPush(settings.gistToken, settings.gistId).then(function () {
-        return gistPull(false);
+      gistPull(true).then(function () {
+        return _doPush(settings.gistToken, settings.gistId);
       }).then(function () {
         showToast('Sync complete ✓');
         gistSetStatus('Sync complete ✓', 'ok', true);
