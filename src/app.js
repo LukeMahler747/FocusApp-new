@@ -1708,6 +1708,8 @@
 
   // ── Checklist banners (rendered below Morning Process) ─────────────────────
 
+  var _clExpanded = {}; // tracks expanded state by cl.id across re-renders
+
   function renderChecklists() {
     var container = el('cl-banners');
     container.innerHTML = '';
@@ -1716,26 +1718,24 @@
     if (!cls.length) return;
 
     cls.forEach(function (cl) {
-      DB.getSetting('cl_state_' + cl.id).then(function (stateJson) {
+      // Only show banner if this checklist is scheduled for the viewed date
+      if (!clAppliesToDay(cl, currentDate)) return;
+
+      var stateKey = 'cl_state_' + cl.id + '_' + currentDate;
+      DB.getSetting(stateKey).then(function (stateJson) {
         var state;
         if (stateJson) {
           try { state = JSON.parse(stateJson); } catch(e) { state = null; }
         }
 
-        var scheduledToday = clAppliesToDay(cl, currentDate);
-
-        if (!scheduledToday && !state) return; // not scheduled and no prior carry state
-
         if (!state) {
-          // No state yet — create fresh
+          // First time viewing this checklist on this date — create fresh state
           state = {
-            resetOnDate: currentDate,
-            dismissed:   false,
             items: cl.items.map(function (item) { return { id: item.id, text: item.text, done: false }; }),
           };
-          DB.setSetting('cl_state_' + cl.id, JSON.stringify(state));
+          DB.setSetting(stateKey, JSON.stringify(state));
         } else {
-          // Sync template items into state — add new ones, remove deleted ones, keep done flags
+          // Sync template changes — add new items, remove deleted ones, keep done flags
           var stateMap = {};
           state.items.forEach(function (i) { stateMap[i.id] = i; });
           var synced = cl.items.map(function (item) {
@@ -1745,15 +1745,15 @@
           });
           var changed = JSON.stringify(synced) !== JSON.stringify(state.items);
           state.items = synced;
-          if (changed) DB.setSetting('cl_state_' + cl.id, JSON.stringify(state));
+          if (changed) DB.setSetting(stateKey, JSON.stringify(state));
         }
 
-        renderClBanner(container, cl, state);
+        renderClBanner(container, cl, state, stateKey);
       });
     });
   }
 
-  function renderClBanner(container, cl, state) {
+  function renderClBanner(container, cl, state, stateKey) {
     var doneCount = state.items.filter(function (i) { return i.done; }).length;
     var total     = state.items.length;
 
@@ -1803,7 +1803,7 @@
       chk.checked = item.done;
       chk.addEventListener('change', function () {
         state.items[idx].done = chk.checked;
-        DB.setSetting('cl_state_' + cl.id, JSON.stringify(state)).then(function () {
+        DB.setSetting(stateKey, JSON.stringify(state)).then(function () {
           renderChecklists();
         });
       });
@@ -1826,7 +1826,7 @@
     completeBtn.textContent = '✓ Check all items';
     completeBtn.addEventListener('click', function () {
       state.items.forEach(function (item) { item.done = true; });
-      DB.setSetting('cl_state_' + cl.id, JSON.stringify(state)).then(function () {
+      DB.setSetting(stateKey, JSON.stringify(state)).then(function () {
         renderChecklists();
       });
     });
@@ -1838,9 +1838,15 @@
     wrapper.appendChild(body);
     container.appendChild(wrapper);
 
+    // Restore expanded state; auto-collapse only when all done
+    var expanded = allDone ? false : !!_clExpanded[cl.id];
+    wrapper.classList.toggle('expanded', expanded);
+    body.classList.toggle('hidden', !expanded);
+
     bar.addEventListener('click', function () {
-      var expanded = wrapper.classList.toggle('expanded');
-      body.classList.toggle('hidden', !expanded);
+      var nowExpanded = wrapper.classList.toggle('expanded');
+      body.classList.toggle('hidden', !nowExpanded);
+      _clExpanded[cl.id] = nowExpanded;
     });
   }
 
