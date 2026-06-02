@@ -229,12 +229,16 @@
   syncBtn.addEventListener('click', function () {
     updateOnline();
     folderSync();
-    // Push local changes up, then pull remote changes down and merge
+    // Push then pull — chained so pull waits for push to finish
     if (navigator.onLine && settings.gistToken && settings.gistId) {
       gistSetStatus('Syncing…', '', false);
-      _doPush(settings.gistToken, settings.gistId);
-      // Pull after a short delay to let the push land
-      setTimeout(function () { gistPull(false); }, 1200);
+      _doPush(settings.gistToken, settings.gistId).then(function () {
+        return gistPull(false);
+      }).then(function () {
+        gistSetStatus('Sync complete ✓', 'ok', true);
+      }).catch(function (err) {
+        gistSetStatus('Sync error: ' + (err && err.message || err), 'err', false);
+      });
     }
   });
   updateOnline();
@@ -1248,16 +1252,20 @@
     // Debounce: coalesce rapid successive pushes into one
     clearTimeout(_gistPushTimer);
     _gistPushTimer = setTimeout(function () {
-      _doPush(token, gistId);
+      _doPush(token, gistId).then(function () {
+        gistSetStatus('Saved ✓', 'ok', true);
+      }).catch(function (err) {
+        gistSetStatus((err && err.message) || 'Sync error', 'err', false);
+      });
     }, 800);
   }
 
   function _doPush(token, gistId) {
-    DB.getAllTodos().then(function (all) {
+    return DB.getAllTodos().then(function (all) {
       return DB.getAllSettings().then(function (s) {
         var savedSettings = Object.assign({}, s);
         delete savedSettings.gistToken;
-        savedSettings.settingsUpdatedAt = Date.now(); // timestamp for merge arbitration
+        savedSettings.settingsUpdatedAt = Date.now();
         return { todos: all, settings: savedSettings };
       });
     }).then(function (payload) {
@@ -1272,12 +1280,9 @@
     }).then(function (r) {
       if (r.ok) {
         DB.setSetting('gistLastPushedAt', Date.now());
-        gistSetStatus('Saved ✓', 'ok', true);
       } else {
-        gistSetStatus('Sync error ' + r.status, 'err', false);
+        throw new Error('Push failed ' + r.status);
       }
-    }).catch(function () {
-      gistSetStatus('Offline', 'err', false);
     });
   }
 
@@ -1916,11 +1921,35 @@
     var cls = getChecklists();
     if (!cls.length) return;
 
-    cls.forEach(function (cl) {
-      // Only show banner if this checklist is scheduled for the viewed date
-      if (!clAppliesToDay(cl, currentDate)) return;
+    var today    = todayKey();
+    var isToday  = currentDate === today;
 
-      var stateKey = 'cl_state_' + cl.id + '_' + currentDate;
+    cls.forEach(function (cl) {
+      // Determine which date's state to show for this checklist:
+      // 1. If scheduled for the viewed date, use that date.
+      // 2. If viewing today and not scheduled today, look back up to 30 days for the
+      //    most recent scheduled day that has an incomplete state (carry-forward).
+      var displayDate = null;
+
+      if (clAppliesToDay(cl, currentDate)) {
+        displayDate = currentDate;
+      } else if (isToday) {
+        // Scan backwards for an incomplete carried-over occurrence
+        for (var i = 1; i <= 30; i++) {
+          var pastKey = shiftKey(today, -i);
+          if (clAppliesToDay(cl, pastKey)) {
+            displayDate = pastKey;
+            break; // take the most recent past scheduled day
+          }
+        }
+      }
+
+      if (!displayDate) return;
+
+      // When carrying forward, we use the past day's stateKey but render on today
+      var stateKey    = 'cl_state_' + cl.id + '_' + displayDate;
+      var carriedOver = displayDate !== currentDate;
+
       DB.getSetting(stateKey).then(function (stateJson) {
         var state;
         if (stateJson) {
@@ -1928,6 +1957,7 @@
         }
 
         if (!state) {
+          if (carriedOver) return; // past day has no state — nothing to carry forward
           // First time viewing this checklist on this date — create fresh state
           state = {
             items: cl.items.map(function (item) { return { id: item.id, text: item.text, links: item.links || '', notes: item.notes || '', done: false }; }),
@@ -1935,6 +1965,12 @@
           };
           DB.setSetting(stateKey, JSON.stringify(state));
         } else {
+          // If carrying forward, only show if not fully complete
+          if (carriedOver) {
+            var allDoneAlready = state.items.length > 0 && state.items.every(function (i) { return i.done; });
+            if (allDoneAlready) return;
+          }
+
           // Sync template changes — add new items, remove deleted ones, keep done flags
           var stateMap = {};
           state.items.forEach(function (i) { stateMap[i.id] = i; });
@@ -1951,12 +1987,12 @@
           }
         }
 
-        renderClBanner(container, cl, state, stateKey);
+        renderClBanner(container, cl, state, stateKey, carriedOver ? displayDate : null);
       });
     });
   }
 
-  function renderClBanner(container, cl, state, stateKey) {
+  function renderClBanner(container, cl, state, stateKey, carriedFromDate) {
     var doneCount = state.items.filter(function (i) { return i.done; }).length;
     var total     = state.items.length;
 
@@ -1979,7 +2015,9 @@
 
     var schedSpan = document.createElement('span');
     schedSpan.className   = 'cl-banner-sched';
-    schedSpan.textContent = clSchedLabel(cl.schedule);
+    schedSpan.textContent = carriedFromDate
+      ? 'from ' + carriedFromDate + ' · ' + clSchedLabel(cl.schedule)
+      : clSchedLabel(cl.schedule);
 
     var toggleBtn = document.createElement('button');
     toggleBtn.className   = 'morning-bar-toggle icon-btn';
