@@ -481,6 +481,7 @@
   });
   el('set-gist-id').addEventListener('change', function () {
     saveSetting('gistId', this.value.trim());
+    updateSyncUI();
   });
 
   settingsBtn.addEventListener('click', openSettings);
@@ -1237,6 +1238,14 @@
     var hint      = el('sync-folder-hint');
     var linkBtn   = el('sync-folder-btn');
     var unlinkBtn = el('sync-folder-unlink');
+    var openGist  = el('gist-open-btn');
+    var gistId    = (el('set-gist-id').value || '').trim() || settings.gistId || '';
+    if (gistId) {
+      openGist.href = 'https://gist.github.com/' + gistId;
+      show(openGist);
+    } else {
+      hide(openGist);
+    }
     if (syncDirHandle) {
       hint.textContent    = 'Linked: ' + syncDirHandle.name + ' — writes focusapp-data.json every 5 min when changed.';
       linkBtn.textContent = 'Re-link folder…';
