@@ -42,4 +42,8 @@
 
 ## To Do
 
-- [ ] (your next items here)
+- [x] Separate sync into two buttons — a push icon and a pull icon
+- [x] Add padding above banner lists so they don't overlap the dark grey top ribbon
+- [x] Switch the date next to "FocusApp" from period-separated to slash-separated (e.g. 06/04/2026)
+- [x] Make the header date copy to clipboard on click
+- [x] Resizable settings panel — drag handle lets user adjust width; panel always opens at the default width, user changes are not persisted across close/reopen

@@ -565,7 +565,7 @@ details[open] .done-toggle::before { transform: rotate(90deg); }
 .drawer {
   position: fixed;
   top: 0; right: 0;
-  width: 320px;
+  width: var(--drawer-width, 320px);
   height: 100%;
   background: var(--bg-drawer);
   box-shadow: var(--shadow-md);
@@ -573,6 +573,23 @@ details[open] .done-toggle::before { transform: rotate(90deg); }
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+}
+
+.drawer-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 5px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background .15s;
+}
+.drawer-resize-handle:hover,
+.drawer-resize-handle.dragging {
+  background: var(--mw-blue-gray);
+  opacity: .5;
 }
 .drawer-header {
   display: flex;
@@ -984,6 +1001,7 @@ details[open] .done-toggle::before { transform: rotate(90deg); }
 }
 .cl-item-edit-input:hover { border-color: var(--border); }
 .cl-item-edit-input:focus { border-color: var(--border-focus); background: var(--bg-input); }
+#cl-banners { padding-top: 8px; }
 .cl-banner { margin-top: 0; }
 .cl-banner-sched {
   font-size: .72rem;

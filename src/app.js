@@ -14,11 +14,12 @@
     var d  = new Date();
     var mm = String(d.getMonth() + 1).padStart(2, '0');
     var dd = String(d.getDate()).padStart(2, '0');
-    return mm + '.' + dd + '.' + d.getFullYear();
+    return mm + '/' + dd + '/' + d.getFullYear();
   }
 
   function keyToDate(key) {
-    var parts = key.split('.');
+    var sep   = key.indexOf('/') !== -1 ? '/' : '.';
+    var parts = key.split(sep);
     return new Date(+parts[2], +parts[0] - 1, +parts[1]);
   }
 
@@ -27,7 +28,7 @@
     d.setDate(d.getDate() + delta);
     var mm = String(d.getMonth() + 1).padStart(2, '0');
     var dd = String(d.getDate()).padStart(2, '0');
-    return mm + '.' + dd + '.' + d.getFullYear();
+    return mm + '/' + dd + '/' + d.getFullYear();
   }
 
   function formatDateLabel(key) {
@@ -83,7 +84,8 @@
   var undoBtn       = el('undo-btn');
   var redoBtn       = el('redo-btn');
   var trashBtn      = el('trash-btn');
-  var syncBtn       = el('sync-btn');
+  var syncPushBtn   = el('sync-push-btn');
+  var syncPullBtn   = el('sync-pull-btn');
   var settingsBtn   = el('settings-btn');
   var onlineDot     = el('online-dot');
   var onlineLabel   = el('online-label');
@@ -225,30 +227,57 @@
       gistPull(true);
     }
   }, 60 * 1000);
-  syncBtn.addEventListener('click', function () {
+  syncPushBtn.addEventListener('click', function () {
     updateOnline();
     folderSync();
-    // Pull first (get remote changes), then push (send merged result up)
     if (navigator.onLine && settings.gistToken && settings.gistId) {
-      showToast('Syncing…');
-      gistSetStatus('Syncing…', '', false);
-      gistPull(true).then(function () {
-        return _doPush(settings.gistToken, settings.gistId);
-      }).then(function () {
-        showToast('Sync complete ✓');
-        gistSetStatus('Sync complete ✓', 'ok', true);
+      showToast('Pushing…');
+      gistSetStatus('Pushing…', '', false);
+      _doPush(settings.gistToken, settings.gistId).then(function () {
+        showToast('Pushed ✓');
+        gistSetStatus('Pushed ✓', 'ok', true);
       }).catch(function (err) {
-        var msg = 'Sync error: ' + (err && err.message || err);
+        var msg = 'Push error: ' + (err && err.message || err);
         showToast(msg, 5000);
         gistSetStatus(msg, 'err', false);
       });
     } else if (!navigator.onLine) {
-      showToast('Offline — sync skipped');
+      showToast('Offline — push skipped');
+    } else if (!settings.gistToken || !settings.gistId) {
+      showToast('No Gist configured — open Settings to set up sync');
+    }
+  });
+
+  syncPullBtn.addEventListener('click', function () {
+    updateOnline();
+    if (navigator.onLine && settings.gistToken && settings.gistId) {
+      showToast('Pulling…');
+      gistSetStatus('Pulling…', '', false);
+      gistPull(false).then(function () {
+        showToast('Pulled ✓');
+      }).catch(function (err) {
+        var msg = 'Pull error: ' + (err && err.message || err);
+        showToast(msg, 5000);
+        gistSetStatus(msg, 'err', false);
+      });
+    } else if (!navigator.onLine) {
+      showToast('Offline — pull skipped');
     } else if (!settings.gistToken || !settings.gistId) {
       showToast('No Gist configured — open Settings to set up sync');
     }
   });
   updateOnline();
+
+  // Click date-key to copy to clipboard
+  dateKeyEl.style.cursor = 'pointer';
+  dateKeyEl.title = 'Click to copy date';
+  dateKeyEl.addEventListener('click', function () {
+    navigator.clipboard.writeText(currentDate).then(function () {
+      showToast('Date copied: ' + currentDate);
+    }).catch(function () {
+      showToast('Copy failed');
+    });
+  });
 
   // ── Date navigation ────────────────────────────────────────────────────────
 
@@ -361,6 +390,38 @@
 
   setInterval(updateDaySplit, 60000);
 
+  // ── Settings drawer resize ─────────────────────────────────────────────────
+
+  var _drawerDefaultWidth = 320;
+
+  (function () {
+    var handle = el('settings-resize-handle');
+    if (!handle) return;
+    var startX, startWidth;
+
+    handle.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+      startX     = e.clientX;
+      startWidth = settingsDrw.getBoundingClientRect().width;
+      handle.classList.add('dragging');
+
+      function onMove(ev) {
+        var dx      = startX - ev.clientX; // dragging left = wider
+        var newW    = Math.min(Math.max(startWidth + dx, 240), Math.round(window.innerWidth * 0.85));
+        settingsDrw.style.setProperty('--drawer-width', newW + 'px');
+      }
+
+      function onUp() {
+        handle.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup',   onUp);
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup',   onUp);
+    });
+  }());
+
   // ── Settings drawer ────────────────────────────────────────────────────────
 
   function openSettings() {
@@ -370,6 +431,8 @@
     el('set-theme').value      = settings.theme     || 'system';
     el('set-gist-token').value = settings.gistToken || '';
     el('set-gist-id').value    = settings.gistId    || '';
+    // Always open at default width; user may resize after opening
+    settingsDrw.style.setProperty('--drawer-width', _drawerDefaultWidth + 'px');
     renderClList();
     updateSyncUI();
     updateSplitPreview();
