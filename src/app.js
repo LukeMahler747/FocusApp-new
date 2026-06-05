@@ -1343,7 +1343,7 @@
       }).catch(function (err) {
         gistSetStatus((err && err.message) || 'Sync error', 'err', false);
       });
-    }, 800);
+    }, 15000);
   }
 
   function _doPush(token, gistId) {
