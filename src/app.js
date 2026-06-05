@@ -429,6 +429,36 @@
     });
   }());
 
+  // ── Archive drawer resize ──────────────────────────────────────────────────
+
+  (function () {
+    var handle = el('trash-resize-handle');
+    if (!handle) return;
+    var startX, startWidth;
+
+    handle.addEventListener('mousedown', function (e) {
+      e.preventDefault();
+      startX     = e.clientX;
+      startWidth = trashDrw.getBoundingClientRect().width;
+      handle.classList.add('dragging');
+
+      function onMove(ev) {
+        var dx   = startX - ev.clientX;
+        var newW = Math.min(Math.max(startWidth + dx, 240), Math.round(window.innerWidth * 0.85));
+        trashDrw.style.setProperty('--drawer-width', newW + 'px');
+      }
+
+      function onUp() {
+        handle.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup',   onUp);
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup',   onUp);
+    });
+  }());
+
   // ── Settings drawer ────────────────────────────────────────────────────────
 
   function openSettings() {
@@ -1010,6 +1040,7 @@
   // ── Trash drawer ───────────────────────────────────────────────────────────
 
   function openTrashDrawer() {
+    trashDrw.style.setProperty('--drawer-width', _drawerDefaultWidth + 'px');
     renderTrash();
     show(trashOvl);
     show(trashDrw);
