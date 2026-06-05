@@ -57,6 +57,13 @@
     return Date.now() + '_' + Math.random().toString(36).slice(2, 8);
   }
 
+  function normalizeTodo(item) {
+    if (item.listDate && item.listDate.indexOf('.') !== -1) {
+      item.listDate = item.listDate.replace(/\./g, '/');
+    }
+    return item;
+  }
+
   function isOverdue(dateStr) {
     if (!dateStr) return false;
     var today = new Date(); today.setHours(0, 0, 0, 0);
@@ -979,7 +986,7 @@
 
         var ops = todos
           .filter(function (item) { return item.id && item.text; })
-          .map(function (item)   { return DB.putTodo(item); });
+          .map(function (item)   { return DB.putTodo(normalizeTodo(item)); });
 
         Object.keys(savedSettings).forEach(function (key) {
           if (key === 'gistToken' || key === 'gistId') return;
@@ -1424,14 +1431,14 @@
             var local = localMap[remote.id];
             if (!local) {
               // New item from remote — add it
-              ops.push(DB.putTodo(remote));
+              ops.push(DB.putTodo(normalizeTodo(remote)));
               changed = true;
             } else {
               // Both have it — keep whichever is newer
               var remoteTs = remote.updatedAt || remote.createdAt || 0;
               var localTs  = local.updatedAt  || local.createdAt  || 0;
               if (remoteTs > localTs) {
-                ops.push(DB.putTodo(remote));
+                ops.push(DB.putTodo(normalizeTodo(remote)));
                 changed = true;
               }
             }
@@ -1513,7 +1520,7 @@
 
       var ops = todos
         .filter(function (item) { return item.id && item.text; })
-        .map(function (item)    { return DB.putTodo(item); });
+        .map(function (item)    { return DB.putTodo(normalizeTodo(item)); });
 
       Object.keys(savedSettings).forEach(function (key) {
         if (key === 'gistToken' || key === 'gistId') return;

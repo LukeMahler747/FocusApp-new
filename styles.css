@@ -1001,7 +1001,7 @@ details[open] .done-toggle::before { transform: rotate(90deg); }
 }
 .cl-item-edit-input:hover { border-color: var(--border); }
 .cl-item-edit-input:focus { border-color: var(--border-focus); background: var(--bg-input); }
-#cl-banners { padding-top: 8px; }
+#cl-banners { padding-top: 16px; }
 .cl-banner { margin-top: 0; }
 .cl-banner-sched {
   font-size: .72rem;
